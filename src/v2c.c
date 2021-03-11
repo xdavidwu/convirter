@@ -11,84 +11,33 @@
 #include <convirter/oci/layer.h>
 #include <guestfs.h>
 
-#define DOWNLOAD_FILE_TEMPLATE	"/convirter-download-XXXXXX"
-
 static const char usage[] = "Usage: v2c INPUT";
 
-static char buf[1 * 1024 * 1024] = {0};
+static const int bufsz = 3 * 1024 * 1024;
 
 struct archive_entry *entry = NULL;
-
-static void randname(char *buf) {
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
-	long r = ts.tv_nsec;
-	for (int i = 0; i < 6; ++i) {
-		buf[i] = 'A' + (r & 15) + (r & 16) * 2;
-		r >>= 5;
-	}
-}
 
 static int dump_file_content(guestfs_h *g, const char *path, struct archive *archive, int64_t size) {
 	// guestfs_read_file does guestfs_download and reads the whole file into memory
 	// read by our own to control buffer size
-	const char *tmpdir = getenv("TMPDIR");
-	char *template = NULL;
-	if (tmpdir) {
-		template = calloc(strlen(tmpdir) + strlen(DOWNLOAD_FILE_TEMPLATE) + 1, sizeof(char));
-		if (!template) {
-			return -errno;
-		}
-		strcpy(template, tmpdir);
-		strcat(template, DOWNLOAD_FILE_TEMPLATE);
-	} else {
-		template = strdup("/tmp" DOWNLOAD_FILE_TEMPLATE);
-		if (!template) {
-			return -errno;
-		}
-	}
-	randname(template + strlen(template) - 6);
-	int res = guestfs_download(g, path, template);
-	if (res < 0) {
-		free(template);
-		return -errno;
-	}
-	int fd = open(template, O_RDONLY);
-	if (res < 0) {
-		free(template);
-		return -errno;
-	}
-	res = read(fd, buf, sizeof(buf));
-	if (res < 0) {
-		free(template);
-		close(fd);
-		return -errno;
-	}
-	size -= res;
-	res = archive_write_data(archive, buf, res);
-	if (res < 0) {
-		free(template);
-		close(fd);
-		return -errno;
-	}
+	// guestfs_download have it's own (allocated and freed at each batch) buffer and extra IO
+	// guestfs_pread, although still allocates buffer at each call, is the fatest one
+	int64_t offset = 0;
+	size_t read = 0;
+	int res = 0;
 	while (size) {
-		res = read(fd, buf, sizeof(buf));
-		if (res < 0) {
-			free(template);
-			close(fd);
+		char *buf = guestfs_pread(g, path, size > bufsz ? bufsz : size, offset, &read);
+		if (!buf) {
 			return -errno;
 		}
-		size -= res;
-		res = archive_write_data(archive, buf, res);
+		size -= read;
+		offset += read;
+		res = archive_write_data(archive, buf, read);
 		if (res < 0) {
-			free(template);
-			close(fd);
 			return -errno;
 		}
+		free(buf);
 	}
-	unlink(template);
-	close(fd);
-	free(template);
 	return 0;
 }
 
@@ -173,7 +122,7 @@ static int dump_guestfs(guestfs_h *g, const char *dir, struct archive *archive) 
 			strcpy(full, "/");
 			strcat(full, ls[i]);
 		}
-		printf("%s\n", full);
+		//printf("%s\n", full);
 		int res = dump_to_archive(g, full, &stats->val[i], archive);
 		if (res) {
 			guestfs_free_statns_list(stats);
