@@ -59,7 +59,7 @@ struct cvirt_oci_layer *cvirt_oci_layer_new() {
 		layer = NULL;
 		goto out;
 	}
-	//res = archive_write_add_filter_zstd(layer->archive);
+	res = archive_write_add_filter_zstd(layer->archive);
 	if (res < 0) {
 		archive_write_free(layer->archive);
 		free(layer);
