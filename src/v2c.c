@@ -92,8 +92,8 @@ static int dump_file_content(guestfs_h *g, const char *path, struct archive *arc
 	return 0;
 }
 
-static int dump_to_archive(guestfs_h *g, const char *path, char type, struct archive *archive) {
-	struct guestfs_statns *stat = guestfs_lstatns(g, path);
+static int dump_to_archive(guestfs_h *g, const char *path,
+		struct guestfs_statns *stat, struct archive *archive) {
 	if (!stat) {
 		return -errno;
 	}
@@ -120,73 +120,77 @@ static int dump_to_archive(guestfs_h *g, const char *path, char type, struct arc
 		},
 	};
 	archive_entry_copy_stat(entry, &tmpstat);
-	if (type == 'l') {
+	if ((stat->st_mode & S_IFMT) == S_IFLNK) {
 		char *link = guestfs_readlink(g, path);
 		if (!link) {
-			guestfs_free_statns(stat);
 			return -errno;
 		}
 		archive_entry_set_symlink(entry, link);
 		free(link);
 	}
-	//TODO: ACL
+	//TODO: ACL, xattr
 	archive_write_header(archive, entry);
-	if (type == 'r') {
+	if ((stat->st_mode & S_IFMT) == S_IFREG) {
 		dump_file_content(g, path, archive, stat->st_size);
 	}
-	guestfs_free_statns(stat);
 	return 0;
 }
 
 static int dump_guestfs(guestfs_h *g, const char *dir, struct archive *archive) {
-	struct guestfs_dirent_list *dirents = guestfs_readdir(g, dir);
-	if (!dirents) {
+	char **ls = guestfs_ls(g, dir);
+	if (!ls) {
+		return -errno;
+	} else if (!ls[0]) {
+		return 0;
+	}
+	struct guestfs_statns_list *stats = guestfs_lstatnslist(g, dir, ls);
+	if (!stats) {
 		return -errno;
 	}
 
-	for (int i = 0; i < dirents->len; i++) {
-		if (!strcmp(dirents->val[i].name, ".") ||
-				!strcmp(dirents->val[i].name, "..") ||
-				!strncmp(dirents->val[i].name, ".wh.", 4)) {
+	for (int i = 0; ls[i]; i++) {
+		if (!strncmp(ls[i], ".wh.", 4)) {
 			continue;
 		}
 		char *full;
 		if (dir[1]) {
 			full = calloc(
-				strlen(dir) + strlen(dirents->val[i].name) + 2,
+				strlen(dir) + strlen(ls[i]) + 2,
 				sizeof(char));
 			if (!full) {
-				guestfs_free_dirent_list(dirents);
+				guestfs_free_statns_list(stats);
 				return -errno;
 			}
 			strcpy(full, dir);
 			strcat(full, "/");
-			strcat(full, dirents->val[i].name);
+			strcat(full, ls[i]);
 		} else {
-			full = calloc(strlen(dirents->val[i].name) + 2, sizeof(char));
+			full = calloc(strlen(ls[i]) + 2, sizeof(char));
 			if (!full) {
-				guestfs_free_dirent_list(dirents);
+				guestfs_free_statns_list(stats);
 				return -errno;
 			}
 			strcpy(full, "/");
-			strcat(full, dirents->val[i].name);
+			strcat(full, ls[i]);
 		}
-		printf("%c %s\n", dirents->val[i].ftyp, full);
-		int res = dump_to_archive(g, full, dirents->val[i].ftyp, archive);
+		printf("%s\n", full);
+		int res = dump_to_archive(g, full, &stats->val[i], archive);
 		if (res) {
-			guestfs_free_dirent_list(dirents);
+			guestfs_free_statns_list(stats);
 			return res;
 		}
-		if (dirents->val[i].ftyp == 'd') {
+		if ((stats->val[i].st_mode & S_IFMT) == S_IFDIR) {
 			res = dump_guestfs(g, full, archive);
 			free(full);
 			if (res) {
-				guestfs_free_dirent_list(dirents);
+				guestfs_free_statns_list(stats);
 				return res;
 			}
 		}
+		free(ls[i]);
 	}
-	guestfs_free_dirent_list(dirents);
+	guestfs_free_statns_list(stats);
+	free(ls);
 	return 0;
 }
 
