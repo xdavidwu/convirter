@@ -66,6 +66,13 @@ struct cvirt_oci_layer *cvirt_oci_layer_new() {
 		layer = NULL;
 		goto out;
 	}
+	res = archive_write_set_format_option(layer->archive, "pax", "xattrheader", "LIBARCHIVE");
+	if (res < 0) {
+		archive_write_free(layer->archive);
+		free(layer);
+		layer = NULL;
+		goto out;
+	}
 	res = archive_write_open_fd(layer->archive, layer->fd);
 	if (res < 0) {
 		archive_write_free(layer->archive);

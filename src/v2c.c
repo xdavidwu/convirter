@@ -77,8 +77,16 @@ static int dump_to_archive(guestfs_h *g, const char *path,
 		archive_entry_set_symlink(entry, link);
 		free(link);
 	}
-	//TODO: ACL, xattr
+
+	struct guestfs_xattr_list *xattrs = guestfs_lgetxattrs(g, path);
+	for (int i = 0; i < xattrs->len; i++) {
+		archive_entry_xattr_add_entry(entry, xattrs->val[i].attrname,
+			xattrs->val[i].attrval, xattrs->val[i].attrval_len);
+	}
+	guestfs_free_xattr_list(xattrs);
+
 	archive_write_header(archive, entry);
+
 	if ((stat->st_mode & S_IFMT) == S_IFREG) {
 		dump_file_content(g, path, archive, stat->st_size);
 	}
