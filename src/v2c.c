@@ -17,6 +17,8 @@ static const int bufsz = 3 * 1024 * 1024;
 
 struct archive_entry *entry = NULL;
 
+struct archive_entry_linkresolver *resolver = NULL;
+
 static int dump_file_content(guestfs_h *g, const char *path, struct archive *archive, int64_t size) {
 	// guestfs_read_file does guestfs_download and reads the whole file into memory
 	// read by our own to control buffer size
@@ -50,6 +52,7 @@ static int dump_to_archive(guestfs_h *g, const char *path,
 	archive_entry_set_pathname(entry, &path[1]);
 	struct stat tmpstat = {
 		.st_dev = stat->st_dev,
+		.st_ino = stat->st_ino,
 		.st_mode = stat->st_mode,
 		.st_uid = stat->st_uid,
 		.st_gid = stat->st_gid,
@@ -85,9 +88,14 @@ static int dump_to_archive(guestfs_h *g, const char *path,
 	}
 	guestfs_free_xattr_list(xattrs);
 
+	// in pax, data is stored on first seen, and archive_entry_linkify
+	// *sparse is for format where data is stored at last seen.
+	struct archive_entry *dummy;
+	archive_entry_linkify(resolver, &entry, &dummy);
 	archive_write_header(archive, entry);
 
-	if ((stat->st_mode & S_IFMT) == S_IFREG) {
+	// size is set to zero if linkify found hardlink to previous entry
+	if ((stat->st_mode & S_IFMT) == S_IFREG && archive_entry_size(entry)) {
 		dump_file_content(g, path, archive, stat->st_size);
 	}
 	return 0;
@@ -193,6 +201,14 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	resolver = archive_entry_linkresolver_new();
+	if (!resolver) {
+		perror("archive_entry_linkresolver_new");
+		exit(EXIT_FAILURE);
+	}
+	struct archive *ar = cvirt_oci_layer_get_libarchive(layer);
+	archive_entry_linkresolver_set_strategy(resolver, archive_format(ar));
+
 	char **mounts = guestfs_inspect_get_mountpoints(g, roots[0]);
 	if (!mounts || !mounts[0]) {
 		exit(EXIT_FAILURE);
@@ -208,9 +224,10 @@ int main(int argc, char *argv[]) {
 	}
 
 	// guestfs_tar_out would let whiteouts fall in
-	dump_guestfs(g, "/", cvirt_oci_layer_get_libarchive(layer));
+	dump_guestfs(g, "/", ar);
 
 	archive_entry_free(entry);
+	archive_entry_linkresolver_free(resolver);
 	cvirt_oci_layer_close(layer);
 	cvirt_oci_layer_free(layer);
 	guestfs_umount_all(g);
