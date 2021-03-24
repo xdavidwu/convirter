@@ -1,4 +1,6 @@
 #include "convirter/oci/layer.h"
+#include "compressor.h"
+#include "sha256.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -9,12 +11,13 @@
 
 struct cvirt_oci_layer {
 	char *tmp_filename;
+	char *compressed_filename;
+	char *diff_id;
 	int fd;
 	struct archive *archive;
 };
 
 struct cvirt_oci_layer *cvirt_oci_layer_new() {
-	char *template = NULL;
 	int res;
 	struct cvirt_oci_layer *layer = calloc(1, sizeof(struct cvirt_oci_layer));
 	if (!layer) {
@@ -23,23 +26,23 @@ struct cvirt_oci_layer *cvirt_oci_layer_new() {
 
 	const char *tmpdir = getenv("TMPDIR");
 	if (tmpdir) {
-		template = calloc(strlen(tmpdir) + strlen(LAYER_FILE_TEMPLATE) + 1, sizeof(char));
-		if (!template) {
+		layer->tmp_filename = calloc(strlen(tmpdir) + strlen(LAYER_FILE_TEMPLATE) + 1, sizeof(char));
+		if (!layer->tmp_filename) {
 			free(layer);
 			layer = NULL;
 			goto out;
 		}
-		strcpy(template, tmpdir);
-		strcat(template, LAYER_FILE_TEMPLATE);
+		strcpy(layer->tmp_filename, tmpdir);
+		strcat(layer->tmp_filename, LAYER_FILE_TEMPLATE);
 	} else {
-		template = strdup("/tmp" LAYER_FILE_TEMPLATE);
-		if (!template) {
+		layer->tmp_filename = strdup("/tmp" LAYER_FILE_TEMPLATE);
+		if (!layer->tmp_filename) {
 			free(layer);
 			layer = NULL;
 			goto out;
 		}
 	}
-	layer->fd = mkstemp(template);
+	layer->fd = mkstemp(layer->tmp_filename);
 	if (layer->fd < 0) {
 		free(layer);
 		layer = NULL;
@@ -53,13 +56,6 @@ struct cvirt_oci_layer *cvirt_oci_layer_new() {
 		goto out;
 	}
 	res = archive_write_set_format_pax_restricted(layer->archive);
-	if (res < 0) {
-		archive_write_free(layer->archive);
-		free(layer);
-		layer = NULL;
-		goto out;
-	}
-	res = archive_write_add_filter_zstd(layer->archive);
 	if (res < 0) {
 		archive_write_free(layer->archive);
 		free(layer);
@@ -82,14 +78,44 @@ struct cvirt_oci_layer *cvirt_oci_layer_new() {
 	}
 
 out:
-	free(template);
 	return layer;
 }
 
 int cvirt_oci_layer_close(struct cvirt_oci_layer *layer) {
 	archive_write_close(layer->archive);
 	archive_write_free(layer->archive);
+	layer->diff_id = sha256sum(layer->tmp_filename);
+	if (!layer->diff_id) {
+		return -1;
+	}
+
+	const char *tmpdir = getenv("TMPDIR");
+	if (tmpdir) {
+		layer->compressed_filename = calloc(strlen(tmpdir) + strlen(LAYER_FILE_TEMPLATE) + 1, sizeof(char));
+		if (!layer->compressed_filename) {
+			return -1;
+		}
+		strcpy(layer->compressed_filename, tmpdir);
+		strcat(layer->compressed_filename, LAYER_FILE_TEMPLATE);
+	} else {
+		layer->compressed_filename = strdup("/tmp" LAYER_FILE_TEMPLATE);
+		if (!layer->compressed_filename) {
+			return -1;
+		}
+	}
+	int compressed_fd = mkstemp(layer->compressed_filename);
+	if (compressed_fd < 0) {
+		return -1;
+	}
+	lseek(layer->fd, 0, SEEK_SET);
+	int res = compress(layer->fd, compressed_fd);
+       if (res < 0) {
+		fprintf(stderr, "compress layer failed: %d\n", res);
+		return -1;
+	}
+	close(compressed_fd);
 	close(layer->fd);
+	unlink(layer->tmp_filename);
 	return 0;
 }
 
@@ -103,5 +129,7 @@ struct archive *cvirt_oci_layer_get_libarchive(struct cvirt_oci_layer *layer) {
 
 int cvirt_oci_layer_free(struct cvirt_oci_layer *layer) {
 	free(layer->tmp_filename);
+	free(layer->diff_id);
+	free(layer->compressed_filename);
 	return 0;
 }
