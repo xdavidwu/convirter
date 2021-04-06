@@ -8,10 +8,14 @@
 
 #include <archive.h>
 #include <archive_entry.h>
+#include <convirter/oci/blob.h>
+#include <convirter/oci/config.h>
+#include <convirter/oci/image.h>
+#include <convirter/oci/manifest.h>
 #include <convirter/oci/layer.h>
 #include <guestfs.h>
 
-static const char usage[] = "Usage: v2c INPUT";
+static const char usage[] = "Usage: v2c INPUT OUTPUT";
 
 static const int bufsz = 3 * 1024 * 1024;
 
@@ -161,7 +165,7 @@ static int dump_guestfs(guestfs_h *g, const char *dir, struct archive *archive) 
 
 int main(int argc, char *argv[]) {
 	int res = 0;
-	if (argc != 2) {
+	if (argc != 3) {
 		puts(usage);
 		exit(EXIT_FAILURE);
 	}
@@ -229,6 +233,31 @@ int main(int argc, char *argv[]) {
 	archive_entry_free(entry);
 	archive_entry_linkresolver_free(resolver);
 	cvirt_oci_layer_close(layer);
+
+	struct cvirt_oci_config *config = cvirt_oci_config_new();
+	cvirt_oci_config_add_layer(config, layer);
+	cvirt_oci_config_close(config);
+
+	struct cvirt_oci_blob *config_blob = cvirt_oci_blob_from_config(config);
+	struct cvirt_oci_blob *layer_blob = cvirt_oci_blob_from_layer(layer);
+	struct cvirt_oci_manifest *manifest = cvirt_oci_manifest_new();
+	cvirt_oci_manifest_set_config(manifest, config_blob);
+	cvirt_oci_manifest_add_layer(manifest, layer_blob);
+	cvirt_oci_manifest_close(manifest);
+
+	struct cvirt_oci_blob *manifest_blob = cvirt_oci_blob_from_manifest(manifest);
+	struct cvirt_oci_image *image = cvirt_oci_image_new(argv[2]);
+	cvirt_oci_image_add_blob(image, layer_blob);
+	cvirt_oci_image_add_blob(image, config_blob);
+	cvirt_oci_image_add_manifest(image, manifest_blob);
+	cvirt_oci_image_close(image);
+
+	cvirt_oci_image_destroy(image);
+	cvirt_oci_blob_destory(manifest_blob);
+	cvirt_oci_manifest_destroy(manifest);
+	cvirt_oci_blob_destory(layer_blob);
+	cvirt_oci_blob_destory(config_blob);
+	cvirt_oci_config_destroy(config);
 	cvirt_oci_layer_free(layer);
 	guestfs_umount_all(g);
 	guestfs_shutdown(g);
