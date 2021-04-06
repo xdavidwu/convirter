@@ -1,3 +1,7 @@
 libconvirter_files += files(
-  'layer.c'
+  'blob.c',
+  'config.c',
+  'image.c',
+  'layer.c',
+  'manifest.c',
 )

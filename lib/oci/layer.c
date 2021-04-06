@@ -1,4 +1,5 @@
 #include "convirter/oci/layer.h"
+#include "oci/layer.h"
 #include "compressor.h"
 #include "sha256.h"
 
@@ -9,13 +10,7 @@
 
 #define LAYER_FILE_TEMPLATE	"/cvirt-oci-layer-XXXXXX"
 
-struct cvirt_oci_layer {
-	char *tmp_filename;
-	char *compressed_filename;
-	char *diff_id;
-	int fd;
-	struct archive *archive;
-};
+static const char media_type_zstd[] = "application/vnd.oci.image.layer.v1.tar+zstd";
 
 struct cvirt_oci_layer *cvirt_oci_layer_new() {
 	int res;
@@ -23,6 +18,8 @@ struct cvirt_oci_layer *cvirt_oci_layer_new() {
 	if (!layer) {
 		goto out;
 	}
+
+	layer->media_type = media_type_zstd;
 
 	const char *tmpdir = getenv("TMPDIR");
 	if (tmpdir) {
@@ -84,7 +81,7 @@ out:
 int cvirt_oci_layer_close(struct cvirt_oci_layer *layer) {
 	archive_write_close(layer->archive);
 	archive_write_free(layer->archive);
-	layer->diff_id = sha256sum(layer->tmp_filename);
+	layer->diff_id = sha256sum_from_file(layer->tmp_filename);
 	if (!layer->diff_id) {
 		return -1;
 	}
