@@ -11,6 +11,6 @@ const char *cvirt_oci_layer_get_path(struct cvirt_oci_layer *layer);
 
 struct archive *cvirt_oci_layer_get_libarchive(struct cvirt_oci_layer *layer);
 
-int cvirt_oci_layer_free(struct cvirt_oci_layer *layer);
+void cvirt_oci_layer_destroy(struct cvirt_oci_layer *layer);
 
 #endif

@@ -258,7 +258,7 @@ int main(int argc, char *argv[]) {
 	cvirt_oci_blob_destory(layer_blob);
 	cvirt_oci_blob_destory(config_blob);
 	cvirt_oci_config_destroy(config);
-	cvirt_oci_layer_free(layer);
+	cvirt_oci_layer_destroy(layer);
 	guestfs_umount_all(g);
 	guestfs_shutdown(g);
 	guestfs_close(g);
