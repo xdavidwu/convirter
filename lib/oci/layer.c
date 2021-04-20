@@ -125,6 +125,7 @@ struct archive *cvirt_oci_layer_get_libarchive(struct cvirt_oci_layer *layer) {
 }
 
 int cvirt_oci_layer_free(struct cvirt_oci_layer *layer) {
+	unlink(layer->compressed_filename);
 	free(layer->tmp_filename);
 	free(layer->diff_id);
 	free(layer->compressed_filename);
