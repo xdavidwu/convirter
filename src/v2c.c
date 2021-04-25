@@ -163,6 +163,10 @@ static int dump_guestfs(guestfs_h *g, const char *dir, struct archive *archive) 
 	return 0;
 }
 
+static int mounts_cmp(const void *a, const void *b) {
+	return strcmp(*(const char **)a, *(const char **)b);
+}
+
 int main(int argc, char *argv[]) {
 	int res = 0;
 	if (argc != 3) {
@@ -217,12 +221,23 @@ int main(int argc, char *argv[]) {
 	if (!mounts || !mounts[0]) {
 		exit(EXIT_FAILURE);
 	}
+	int sz = 0;
+	while (mounts[sz++]);
+	sz /= 2;
+	qsort(mounts, sz, sizeof(char *) * 2, mounts_cmp);
 	int index = 0;
 	while (mounts[index]) {
-		res = guestfs_mount_ro(g, mounts[index + 1], mounts[index]);
+		if (mounts[index][1] != '\0' && !guestfs_is_dir(g, mounts[index])) {
+			res = guestfs_mkdir_p(g, mounts[index]);
+			if (res < 0) {
+				fprintf(stderr, "Warning: mountpoint %s setup failed.\n",
+					mounts[index]);
+			}
+		}
+		res = guestfs_mount(g, mounts[index + 1], mounts[index]);
 		if (res < 0) {
-			fprintf(stderr, "Warning: %s at %s mount failed.\n",
-				mounts[index], mounts[index + 1]);
+			fprintf(stderr, "Warning: mount %s at %s failed.\n",
+				mounts[index + 1], mounts[index]);
 		}
 		index += 2;
 	}
