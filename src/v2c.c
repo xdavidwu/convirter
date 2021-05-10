@@ -186,6 +186,18 @@ static int cleanup_fstab(guestfs_h *g, char **mounts) {
 	return guestfs_aug_save(g);
 }
 
+static int cleanup_systemd(guestfs_h *g) {
+	// Debian
+	char *cmd[] = {
+		"systemctl",
+		"disable",
+		"networking.service",
+		NULL,
+	};
+	free(guestfs_command(g, cmd));
+	return 0;
+}
+
 int main(int argc, char *argv[]) {
 	int res = 0;
 	if (argc != 3) {
@@ -262,6 +274,8 @@ int main(int argc, char *argv[]) {
 	}
 
 	cleanup_fstab(g, mounts);
+
+	cleanup_systemd(g);
 
 	// guestfs_tar_out would let whiteouts fall in
 	dump_guestfs(g, "/", ar);
