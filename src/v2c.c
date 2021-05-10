@@ -167,6 +167,25 @@ static int mounts_cmp(const void *a, const void *b) {
 	return strcmp(*(const char **)a, *(const char **)b);
 }
 
+static int cleanup_fstab(guestfs_h *g, char **mounts) {
+	guestfs_aug_init(g, "/", 0);
+	int index = 0, res = 0;
+	while (mounts[index]) {
+		char exp[27 + strlen(mounts[index]) + 1];
+		// TODO: also match devices?
+		// needs to consider: UUID, PARTUUID, LABEL, PARTLABEL
+		sprintf(exp, "/files/etc/fstab/*[file='%s']", mounts[index]);
+		res = guestfs_aug_rm(g, exp);
+		if (res < 0) {
+			fprintf(stderr, "Error: fstab cleanup mount %s at %s failed.\n",
+				mounts[index + 1], mounts[index]);
+			return res;
+		}
+		index += 2;
+	}
+	return guestfs_aug_save(g);
+}
+
 int main(int argc, char *argv[]) {
 	int res = 0;
 	if (argc != 3) {
@@ -241,6 +260,8 @@ int main(int argc, char *argv[]) {
 		}
 		index += 2;
 	}
+
+	cleanup_fstab(g, mounts);
 
 	// guestfs_tar_out would let whiteouts fall in
 	dump_guestfs(g, "/", ar);
