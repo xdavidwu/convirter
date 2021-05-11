@@ -168,6 +168,7 @@ static int mounts_cmp(const void *a, const void *b) {
 }
 
 static int cleanup_fstab(guestfs_h *g, char **mounts) {
+	/* TODO: make it optional */
 	guestfs_aug_init(g, "/", 0);
 	int index = 0, res = 0;
 	while (mounts[index]) {
@@ -187,14 +188,37 @@ static int cleanup_fstab(guestfs_h *g, char **mounts) {
 }
 
 static int cleanup_systemd(guestfs_h *g) {
-	// Debian
-	char *cmd[] = {
-		"systemctl",
-		"disable",
-		"networking.service",
-		NULL,
-	};
-	free(guestfs_command(g, cmd));
+	/* TODO: organize by category (e.g. network) and make them optional */
+	// Debian ifup
+	{
+		char *cmd[] = {
+			"systemctl",
+			"disable",
+			"networking.service",
+			NULL,
+		};
+		free(guestfs_command(g, cmd));
+	}
+	// Ubuntu multipathd
+	{
+		char *cmd[] = {
+			"systemctl",
+			"disable",
+			"multipathd.service",
+			NULL,
+		};
+		free(guestfs_command(g, cmd));
+	}
+	// Ubuntu systemd-rfkill (socket)
+	{
+		char *cmd[] = {
+			"systemctl",
+			"mask",
+			"systemd-rfkill.socket",
+			NULL,
+		};
+		free(guestfs_command(g, cmd));
+	}
 	return 0;
 }
 
