@@ -219,6 +219,18 @@ static int cleanup_systemd(guestfs_h *g) {
 		};
 		free(guestfs_command(g, cmd));
 	}
+	// CentOS auditd
+	// Only one instance should run, leave it to host
+	// (https://access.redhat.com/articles/4494341)
+	{
+		char *cmd[] = {
+			"systemctl",
+			"disable",
+			"auditd.service",
+			NULL,
+		};
+		free(guestfs_command(g, cmd));
+	}
 	return 0;
 }
 
