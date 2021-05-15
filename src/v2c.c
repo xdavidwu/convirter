@@ -17,6 +17,16 @@
 
 static const char usage[] = "Usage: v2c INPUT OUTPUT";
 
+// TODO: we may want this individually configurable
+static const char *temporary_paths[] = {
+	// needs trailing slash
+	"/tmp/",
+	"/run/",
+	"/var/tmp/",
+	"/var/cache/",
+	NULL,
+};
+
 static const int bufsz = 3 * 1024 * 1024;
 
 struct archive_entry *entry = NULL;
@@ -106,6 +116,11 @@ static int dump_to_archive(guestfs_h *g, const char *path,
 }
 
 static int dump_guestfs(guestfs_h *g, const char *dir, struct archive *archive) {
+	for (int i = 0; temporary_paths[i]; i++) {
+		if (!strcmp(dir, temporary_paths[i])) {
+			return 0;
+		}
+	}
 	char **ls = guestfs_ls(g, dir);
 	if (!ls) {
 		return -errno;
@@ -119,6 +134,7 @@ static int dump_guestfs(guestfs_h *g, const char *dir, struct archive *archive) 
 
 	for (int i = 0; ls[i]; i++) {
 		if (!strncmp(ls[i], ".wh.", 4)) {
+			// no way to store names like whiteouts in OCI
 			continue;
 		}
 		char *full;
