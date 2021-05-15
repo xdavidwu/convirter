@@ -69,6 +69,68 @@ int cvirt_oci_config_add_layer(struct cvirt_oci_config *config, struct cvirt_oci
 	return 0;
 }
 
+static int config_ensure_config_object(struct cvirt_oci_config *config) {
+	if (config->config) {
+		return 0;
+	}
+	config->config = json_object_new_object();
+	if (!config->config) {
+		return -errno;
+	}
+	json_object_object_add(config->root_obj, "config", config->config);
+	return 0;
+}
+
+int cvirt_oci_config_set_user(struct cvirt_oci_config *config, const char *user) {
+	int res = config_ensure_config_object(config);
+	if (res < 0) {
+		return res;
+	}
+	struct json_object *user_obj = json_object_new_string(user);
+	if (!user_obj) {
+		return -errno;
+	}
+	json_object_object_add(config->config, "User", user_obj);
+	return 0;
+}
+
+int cvirt_oci_config_set_cmd(struct cvirt_oci_config *config, char *const cmd[]) {
+	int res = config_ensure_config_object(config);
+	if (res < 0) {
+		return res;
+	}
+	struct json_object *cmd_arr = json_object_new_array();
+	if (!cmd_arr) {
+		return -errno;
+	}
+	for (int i = 0; cmd[i]; i++) {
+		struct json_object *str = json_object_new_string(cmd[i]);
+		if (!str) {
+			goto err;
+		}
+		json_object_array_add(cmd_arr, str);
+	}
+	json_object_object_add(config->config, "Cmd", cmd_arr);
+	return 0;
+err:
+	res = errno;
+	json_object_put(cmd_arr);
+	return -res;
+}
+
+int cvirt_oci_config_set_stop_signal(struct cvirt_oci_config *config, const char *signal) {
+	int res = config_ensure_config_object(config);
+	if (res < 0) {
+		return res;
+	}
+	struct json_object *signal_obj = json_object_new_string(signal);
+	if (!signal_obj) {
+		return -errno;
+	}
+	json_object_object_add(config->config, "StopSignal", signal_obj);
+	return 0;
+}
+
 int cvirt_oci_config_close(struct cvirt_oci_config *config) {
 	config->content = json_object_to_json_string_ext(config->root_obj, JSON_C_TO_STRING_PLAIN);
 	return config->content ? 0 : -errno;
