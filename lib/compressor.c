@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int compress(int fd_in, int fd_out) {
+int compress(int fd_in, int fd_out, enum compression compression, int level) {
 	struct archive *compressor = archive_write_new();
 	if (!compressor) {
 		return -1;
@@ -15,11 +15,37 @@ int compress(int fd_in, int fd_out) {
 		archive_write_free(compressor);
 		return res;
 	}
-	res = archive_write_add_filter_zstd(compressor);
-	if (res < 0) {
-		archive_write_free(compressor);
-		return res;
+
+	const char *filter_str = NULL;
+	switch (compression) {
+	case COMPRESSION_ZSTD:
+		filter_str = "zstd";
+		res = archive_write_add_filter_zstd(compressor);
+		if (res < 0) {
+			archive_write_free(compressor);
+			return res;
+		}
+		break;
+	case COMPRESSION_GZIP:
+		filter_str = "gzip";
+		res = archive_write_add_filter_gzip(compressor);
+		if (res < 0) {
+			archive_write_free(compressor);
+			return res;
+		}
+		break;
 	}
+	if (level != 0) {
+		char level_str[12];
+		sprintf(level_str, "%d", level);
+		res = archive_write_set_filter_option(compressor,
+			filter_str, "comporession-level" , level_str);
+		if (res < 0) {
+			archive_write_free(compressor);
+			return res;
+		}
+	}
+
 	res = archive_write_open_fd(compressor, fd_out);
 	if (res < 0) {
 		archive_write_free(compressor);

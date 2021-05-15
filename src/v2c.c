@@ -296,7 +296,7 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Warning: Multiple roots detected, dumping only first.\n");
 	}
 
-	struct cvirt_oci_layer *layer = cvirt_oci_layer_new();
+	struct cvirt_oci_layer *layer = cvirt_oci_layer_new(CVIRT_OCI_LAYER_COMPRESSION_ZSTD, 0);
 	if (!layer) {
 		perror("cvirt_oci_layer_new");
 		exit(EXIT_FAILURE);
