@@ -250,6 +250,22 @@ static int cleanup_systemd(guestfs_h *g) {
 	return 0;
 }
 
+static int setup_systemd_config(struct cvirt_oci_config *config) {
+	int res = cvirt_oci_config_set_user(config, "0:0");
+	if (res < 0) {
+		return res;
+	}
+	char *const cmd[] = {
+		"/sbin/init",
+		NULL,
+	};
+	res = cvirt_oci_config_set_cmd(config, cmd);
+	if (res < 0) {
+		return res;
+	}
+	return cvirt_oci_config_set_stop_signal(config, "SIGRTMIN+3");
+}
+
 int main(int argc, char *argv[]) {
 	int res = 0;
 	if (argc != 3) {
@@ -338,6 +354,7 @@ int main(int argc, char *argv[]) {
 
 	struct cvirt_oci_config *config = cvirt_oci_config_new();
 	cvirt_oci_config_add_layer(config, layer);
+	setup_systemd_config(config);
 	cvirt_oci_config_close(config);
 
 	struct cvirt_oci_blob *config_blob = cvirt_oci_blob_from_config(config);
