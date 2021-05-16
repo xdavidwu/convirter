@@ -132,7 +132,8 @@ int cvirt_oci_image_add_manifest(struct cvirt_oci_image *image, struct cvirt_oci
 }
 
 int cvirt_oci_image_close(struct cvirt_oci_image *image) {
-	const char *index = json_object_to_json_string(image->index_obj);
+	const char *index = json_object_to_json_string_ext(image->index_obj,
+		JSON_C_TO_STRING_PLAIN);
 	size_t sz = strlen(index);
 	archive_entry_clear(image->entry);
 	archive_entry_set_pathname(image->entry, "index.json");
