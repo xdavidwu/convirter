@@ -1,10 +1,12 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -29,9 +31,13 @@ static const char *temporary_paths[] = {
 
 static const int bufsz = 3 * 1024 * 1024;
 
-struct archive_entry *entry = NULL;
+static struct archive_entry *entry = NULL;
 
-struct archive_entry_linkresolver *resolver = NULL;
+static struct archive_entry_linkresolver *resolver = NULL;
+
+static bool set_modification_epoch = false;
+
+static time_t modification_start, modification_end, source_date_epoch;
 
 static int dump_file_content(guestfs_h *g, const char *path, struct archive *archive, int64_t size) {
 	// guestfs_read_file does guestfs_download and reads the whole file into memory
@@ -85,6 +91,25 @@ static int dump_to_archive(guestfs_h *g, const char *path,
 			.tv_nsec = stat->st_ctime_nsec,
 		},
 	};
+
+	if (set_modification_epoch) {
+		if (tmpstat.st_atim.tv_sec >= modification_start &&
+				tmpstat.st_atim.tv_sec <= modification_end) {
+			tmpstat.st_atim.tv_sec = source_date_epoch;
+			tmpstat.st_atim.tv_nsec = 0;
+		}
+		if (tmpstat.st_mtim.tv_sec >= modification_start &&
+				tmpstat.st_mtim.tv_sec <= modification_end) {
+			tmpstat.st_mtim.tv_sec = source_date_epoch;
+			tmpstat.st_mtim.tv_nsec = 0;
+		}
+		if (tmpstat.st_ctim.tv_sec >= modification_start &&
+				tmpstat.st_ctim.tv_sec <= modification_end) {
+			tmpstat.st_ctim.tv_sec = source_date_epoch;
+			tmpstat.st_ctim.tv_nsec = 0;
+		}
+	}
+
 	archive_entry_copy_stat(entry, &tmpstat);
 	if ((stat->st_mode & S_IFMT) == S_IFLNK) {
 		char *link = guestfs_readlink(g, path);
@@ -282,6 +307,12 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	char *source_date_epoch_env = getenv("SOURCE_DATE_EPOCH");
+	if (source_date_epoch_env) {
+		set_modification_epoch = true;
+		source_date_epoch = atoll(source_date_epoch_env);
+	}
+
 	guestfs_h *g = guestfs_create();
 	if (!g) {
 		exit(EXIT_FAILURE);
@@ -341,6 +372,8 @@ int main(int argc, char *argv[]) {
 	struct archive *ar = cvirt_oci_layer_get_libarchive(layer);
 	archive_entry_linkresolver_set_strategy(resolver, archive_format(ar));
 
+	modification_start = time(NULL);
+
 	char **mounts = guestfs_inspect_get_mountpoints(g, target_root);
 	free(target_root);
 	if (!mounts || !mounts[0]) {
@@ -373,6 +406,8 @@ int main(int argc, char *argv[]) {
 	free(mounts);
 
 	cleanup_systemd(g);
+
+	modification_end = time(NULL);
 
 	// guestfs_tar_out would let whiteouts fall in
 	dump_guestfs(g, "/", ar);
