@@ -37,7 +37,7 @@ static int dump_file_content(guestfs_h *g, const char *path, struct archive *arc
 	// guestfs_read_file does guestfs_download and reads the whole file into memory
 	// read by our own to control buffer size
 	// guestfs_download have it's own (allocated and freed at each batch) buffer and extra IO
-	// guestfs_pread, although still allocates buffer at each call, is the fatest one
+	// guestfs_pread, although still allocates buffer at each call, is the fastest one
 	int64_t offset = 0;
 	size_t read = 0;
 	int res = 0;
@@ -49,10 +49,10 @@ static int dump_file_content(guestfs_h *g, const char *path, struct archive *arc
 		size -= read;
 		offset += read;
 		res = archive_write_data(archive, buf, read);
+		free(buf);
 		if (res < 0) {
 			return -errno;
 		}
-		free(buf);
 	}
 	return 0;
 }
@@ -89,6 +89,7 @@ static int dump_to_archive(guestfs_h *g, const char *path,
 	if ((stat->st_mode & S_IFMT) == S_IFLNK) {
 		char *link = guestfs_readlink(g, path);
 		if (!link) {
+			free(link);
 			return -errno;
 		}
 		archive_entry_set_symlink(entry, link);
@@ -121,6 +122,7 @@ static int dump_guestfs(guestfs_h *g, const char *dir, struct archive *archive) 
 			return 0;
 		}
 	}
+
 	char **ls = guestfs_ls(g, dir);
 	if (!ls) {
 		return -errno;
@@ -132,16 +134,16 @@ static int dump_guestfs(guestfs_h *g, const char *dir, struct archive *archive) 
 		return -errno;
 	}
 
+	int res = 0;
 	for (int i = 0; ls[i]; i++) {
 		if (!strncmp(ls[i], ".wh.", 4)) {
 			// no way to store names like whiteouts in OCI
 			continue;
 		}
+
 		char *full;
 		if (dir[1]) {
-			full = calloc(
-				strlen(dir) + strlen(ls[i]) + 2,
-				sizeof(char));
+			full = calloc(strlen(dir) + strlen(ls[i]) + 2, sizeof(char));
 			if (!full) {
 				guestfs_free_statns_list(stats);
 				return -errno;
@@ -158,25 +160,27 @@ static int dump_guestfs(guestfs_h *g, const char *dir, struct archive *archive) 
 			strcpy(full, "/");
 			strcat(full, ls[i]);
 		}
-		//printf("%s\n", full);
-		int res = dump_to_archive(g, full, &stats->val[i], archive);
-		if (res) {
-			guestfs_free_statns_list(stats);
-			return res;
+		free(ls[i]);
+
+		res = dump_to_archive(g, full, &stats->val[i], archive);
+		if (res < 0) {
+			free(full);
+			goto cleanup;
 		}
+
 		if ((stats->val[i].st_mode & S_IFMT) == S_IFDIR) {
 			res = dump_guestfs(g, full, archive);
-			free(full);
-			if (res) {
-				guestfs_free_statns_list(stats);
-				return res;
+			if (res < 0) {
+				free(full);
+				goto cleanup;
 			}
 		}
-		free(ls[i]);
+		free(full);
 	}
+cleanup:
 	guestfs_free_statns_list(stats);
 	free(ls);
-	return 0;
+	return res;
 }
 
 static int mounts_cmp(const void *a, const void *b) {
@@ -200,14 +204,19 @@ static int cleanup_fstab(guestfs_h *g, char **mounts) {
 		}
 		index += 2;
 	}
-	return guestfs_aug_save(g);
+	res = guestfs_aug_save(g);
+	if (res < 0) {
+		fprintf(stderr, "Error: saving edited fstab failed.\n");
+		return res;
+	}
+	return guestfs_aug_close(g);
 }
 
 static int cleanup_systemd(guestfs_h *g) {
 	/* TODO: organize by category (e.g. network) and make them optional */
 	// Debian ifup
 	{
-		char *cmd[] = {
+		char *const cmd[] = {
 			"systemctl",
 			"disable",
 			"networking.service",
@@ -217,7 +226,7 @@ static int cleanup_systemd(guestfs_h *g) {
 	}
 	// Ubuntu multipathd
 	{
-		char *cmd[] = {
+		char *const cmd[] = {
 			"systemctl",
 			"disable",
 			"multipathd.service",
@@ -227,7 +236,7 @@ static int cleanup_systemd(guestfs_h *g) {
 	}
 	// Ubuntu systemd-rfkill (socket)
 	{
-		char *cmd[] = {
+		char *const cmd[] = {
 			"systemctl",
 			"mask",
 			"systemd-rfkill.socket",
@@ -239,7 +248,7 @@ static int cleanup_systemd(guestfs_h *g) {
 	// Only one instance should run, leave it to host
 	// (https://access.redhat.com/articles/4494341)
 	{
-		char *cmd[] = {
+		char *const cmd[] = {
 			"systemctl",
 			"disable",
 			"auditd.service",
@@ -338,11 +347,10 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 	int sz = 0;
-	while (mounts[sz++]);
+	while (mounts[sz += 2]);
 	sz /= 2;
 	qsort(mounts, sz, sizeof(char *) * 2, mounts_cmp);
-	int index = 0;
-	while (mounts[index]) {
+	for (int index = 0; mounts[index]; index += 2) {
 		if (mounts[index][1] != '\0' && !guestfs_is_dir(g, mounts[index])) {
 			res = guestfs_mkdir_p(g, mounts[index]);
 			if (res < 0) {
@@ -355,10 +363,14 @@ int main(int argc, char *argv[]) {
 			fprintf(stderr, "Warning: mount %s at %s failed.\n",
 				mounts[index + 1], mounts[index]);
 		}
-		index += 2;
 	}
 
 	cleanup_fstab(g, mounts);
+
+	for (int i = 0; mounts[i]; i++) {
+		free(mounts[i]);
+	}
+	free(mounts);
 
 	cleanup_systemd(g);
 
