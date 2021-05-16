@@ -215,11 +215,14 @@ static int mounts_cmp(const void *a, const void *b) {
 	return strcmp(*(const char **)a, *(const char **)b);
 }
 
-static int cleanup_fstab(struct v2c_state *state, char **mounts) {
+static int cleanup_fstab(struct v2c_state *state, char **mounts, bool *mount_succeeded) {
 	/* TODO: make it optional */
 	guestfs_aug_init(state->guestfs, "/", 0);
-	int index = 0, res = 0;
-	while (mounts[index]) {
+	int res = 0;
+	for (int index = 0; mounts[index]; index += 2) {
+		if (!mount_succeeded[index / 2]) {
+			continue;
+		}
 		char exp[27 + strlen(mounts[index]) + 1];
 		// TODO: also match devices?
 		// needs to consider: UUID, PARTUUID, LABEL, PARTLABEL
@@ -230,7 +233,6 @@ static int cleanup_fstab(struct v2c_state *state, char **mounts) {
 				mounts[index + 1], mounts[index]);
 			goto cleanup;
 		}
-		index += 2;
 	}
 	res = guestfs_aug_save(state->guestfs);
 	if (res < 0) {
@@ -391,6 +393,7 @@ int main(int argc, char *argv[]) {
 	while (mounts[sz += 2]);
 	sz /= 2;
 	qsort(mounts, sz, sizeof(char *) * 2, mounts_cmp);
+	bool mount_succeeded[sz];
 	for (int index = 0; mounts[index]; index += 2) {
 		if (mounts[index][1] != '\0' &&
 				!guestfs_is_dir(state.guestfs, mounts[index])) {
@@ -404,10 +407,13 @@ int main(int argc, char *argv[]) {
 		if (res < 0) {
 			fprintf(stderr, "Warning: mount %s at %s failed.\n",
 				mounts[index + 1], mounts[index]);
+			mount_succeeded[index / 2] = false;
+			continue;
 		}
+		mount_succeeded[index / 2] = true;
 	}
 
-	cleanup_fstab(&state, mounts);
+	cleanup_fstab(&state, mounts, mount_succeeded);
 
 	for (int i = 0; mounts[i]; i++) {
 		free(mounts[i]);
