@@ -287,13 +287,29 @@ int main(int argc, char *argv[]) {
 	}
 
 	char **roots = guestfs_inspect_os(g);
+	char *target_root = NULL;
 	if (!roots) {
 		exit(EXIT_FAILURE);
 	} else if (!roots[0]) {
 		fprintf(stderr, "No root found.\n");
 		exit(EXIT_FAILURE);
-	} else if (roots[1]) {
-		fprintf(stderr, "Warning: Multiple roots detected, dumping only first.\n");
+	}
+	for (int i = 0; roots[i]; i++) {
+		char *type = guestfs_inspect_get_type(g, roots[i]);
+		if (!type) {
+			free(roots[i]);
+			continue;
+		}
+		if (!strcmp(type, "linux")) {
+			target_root = roots[i];
+			break;
+		}
+		free(roots[i]);
+	}
+	free(roots);
+	if (!target_root) {
+		fprintf(stderr, "Cannot find any Linux-based OS\n");
+		exit(EXIT_FAILURE);
 	}
 
 	struct cvirt_oci_layer *layer = cvirt_oci_layer_new(CVIRT_OCI_LAYER_COMPRESSION_ZSTD, 0);
@@ -316,7 +332,8 @@ int main(int argc, char *argv[]) {
 	struct archive *ar = cvirt_oci_layer_get_libarchive(layer);
 	archive_entry_linkresolver_set_strategy(resolver, archive_format(ar));
 
-	char **mounts = guestfs_inspect_get_mountpoints(g, roots[0]);
+	char **mounts = guestfs_inspect_get_mountpoints(g, target_root);
+	free(target_root);
 	if (!mounts || !mounts[0]) {
 		exit(EXIT_FAILURE);
 	}
