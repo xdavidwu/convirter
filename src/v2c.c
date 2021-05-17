@@ -18,11 +18,16 @@
 #include <convirter/oci/layer.h>
 #include <guestfs.h>
 
-static const char usage[] = \
+static const char usage[] =
 	"Usage: %s [OPTION]... INPUT OUTPUT\n"
-	"Convert a VM image into OCI-compatible container image.\n";
+	"Convert a VM image into OCI-compatible container image.\n"
+	"\n"
+	"      --compression=ALGO[:LEVEL]  Compress layers with algorithm ALGO\n"
+	"                                  Available algorithms: zstd, gzip, none\n"
+	"                                  Defaults to zstd";
 
 static const struct option long_options[] = {
+	{"compression",	required_argument,	NULL,	1},
 	{0},
 };
 
@@ -43,8 +48,13 @@ struct v2c_state {
 	struct archive *layer_archive;
 	struct archive_entry *layer_entry;
 	struct archive_entry_linkresolver *layer_link_resolver;
-	time_t modification_start, modification_end, source_date_epoch;
-	bool set_modification_epoch;
+	time_t modification_start, modification_end;
+	struct {
+		time_t source_date_epoch;
+		bool set_modification_epoch;
+		enum cvirt_oci_layer_compression compression;
+		int compression_level;
+	} config;
 };
 
 static int parse_options(struct v2c_state *state, int argc, char *argv[]) {
@@ -53,6 +63,26 @@ static int parse_options(struct v2c_state *state, int argc, char *argv[]) {
 		switch (opt) {
 		case '?':
 			return -EINVAL;
+		case 1:
+			if (!strcmp(optarg, "none")) {
+				state->config.compression = CVIRT_OCI_LAYER_COMPRESSION_NONE;
+			} else if (!strncmp(optarg, "gzip", 4)) {
+				state->config.compression = CVIRT_OCI_LAYER_COMPRESSION_GZIP;
+				if (optarg[4] == ':') {
+					state->config.compression_level = atoi(&optarg[5]);
+				} else if (optarg[4]) {
+					return -EINVAL;
+				}
+			} else if (!strncmp(optarg, "zstd", 4)) {
+				state->config.compression = CVIRT_OCI_LAYER_COMPRESSION_ZSTD;
+				if (optarg[4] == ':') {
+					state->config.compression_level = atoi(&optarg[5]);
+				} else if (optarg[4]) {
+					return -EINVAL;
+				}
+			} else {
+				return -EINVAL;
+			}
 		}
 	}
 	return 0;
@@ -112,20 +142,20 @@ static int dump_to_archive(struct v2c_state *state, const char *path,
 		},
 	};
 
-	if (state->set_modification_epoch) {
+	if (state->config.set_modification_epoch) {
 		if (tmpstat.st_atim.tv_sec >= state->modification_start &&
 				tmpstat.st_atim.tv_sec <= state->modification_end) {
-			tmpstat.st_atim.tv_sec = state->source_date_epoch;
+			tmpstat.st_atim.tv_sec = state->config.source_date_epoch;
 			tmpstat.st_atim.tv_nsec = 0;
 		}
 		if (tmpstat.st_mtim.tv_sec >= state->modification_start &&
 				tmpstat.st_mtim.tv_sec <= state->modification_end) {
-			tmpstat.st_mtim.tv_sec = state->source_date_epoch;
+			tmpstat.st_mtim.tv_sec = state->config.source_date_epoch;
 			tmpstat.st_mtim.tv_nsec = 0;
 		}
 		if (tmpstat.st_ctim.tv_sec >= state->modification_start &&
 				tmpstat.st_ctim.tv_sec <= state->modification_end) {
-			tmpstat.st_ctim.tv_sec = state->source_date_epoch;
+			tmpstat.st_ctim.tv_sec = state->config.source_date_epoch;
 			tmpstat.st_ctim.tv_nsec = 0;
 		}
 	}
@@ -326,7 +356,11 @@ static int setup_systemd_config(struct cvirt_oci_config *config) {
 }
 
 int main(int argc, char *argv[]) {
-	struct v2c_state state = {0};
+	struct v2c_state state = {
+		.config =  {
+			.compression = CVIRT_OCI_LAYER_COMPRESSION_ZSTD,
+		},
+	};
 	int res = 0;
 	if (parse_options(&state, argc, argv) < 0 || argc - optind != 2) {
 		fprintf(stderr, usage, argv[0]);
@@ -335,8 +369,8 @@ int main(int argc, char *argv[]) {
 
 	char *source_date_epoch_env = getenv("SOURCE_DATE_EPOCH");
 	if (source_date_epoch_env) {
-		state.set_modification_epoch = true;
-		state.source_date_epoch = atoll(source_date_epoch_env);
+		state.config.set_modification_epoch = true;
+		state.config.source_date_epoch = atoll(source_date_epoch_env);
 	}
 
 	state.guestfs = guestfs_create();
@@ -379,7 +413,8 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
-	struct cvirt_oci_layer *layer = cvirt_oci_layer_new(CVIRT_OCI_LAYER_COMPRESSION_ZSTD, 0);
+	struct cvirt_oci_layer *layer = cvirt_oci_layer_new(state.config.compression,
+		state.config.compression_level);
 	if (!layer) {
 		perror("cvirt_oci_layer_new");
 		exit(EXIT_FAILURE);
