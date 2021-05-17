@@ -111,7 +111,7 @@ int cvirt_oci_layer_close(struct cvirt_oci_layer *layer) {
 		compression = COMPRESSION_GZIP;
 		break;
 	case CVIRT_OCI_LAYER_COMPRESSION_NONE:
-		strcpy(layer->compressed_filename, layer->tmp_filename);
+		layer->compressed_filename = strdup(layer->tmp_filename);
 		return 0;
 	}
 
