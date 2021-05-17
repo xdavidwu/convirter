@@ -39,8 +39,9 @@ int compress(int fd_in, int fd_out, enum compression compression, int level) {
 		char level_str[12];
 		sprintf(level_str, "%d", level);
 		res = archive_write_set_filter_option(compressor,
-			filter_str, "comporession-level" , level_str);
+			filter_str, "compression-level" , level_str);
 		if (res < 0) {
+			fprintf(stderr, "compress: set level: %s\n", archive_error_string(compressor));
 			archive_write_free(compressor);
 			return res;
 		}
