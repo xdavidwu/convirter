@@ -24,10 +24,13 @@ static const char usage[] =
 	"\n"
 	"      --compression=ALGO[:LEVEL]  Compress layers with algorithm ALGO\n"
 	"                                  Available algorithms: zstd, gzip, none\n"
-	"                                  Defaults to zstd";
+	"                                  Defaults to zstd\n"
+	"      --no-systemd-cleanup        Disable removing systemd units that will\n"
+	"                                  likely fail and is unneeded in containers\n";
 
 static const struct option long_options[] = {
 	{"compression",	required_argument,	NULL,	1},
+	{"no-systemd-cleanup",	no_argument,	NULL,	2},
 	{0},
 };
 
@@ -54,6 +57,7 @@ struct v2c_state {
 		bool set_modification_epoch;
 		enum cvirt_oci_layer_compression compression;
 		int compression_level;
+		bool disable_systemd_cleanup;
 	} config;
 };
 
@@ -83,6 +87,8 @@ static int parse_options(struct v2c_state *state, int argc, char *argv[]) {
 			} else {
 				return -EINVAL;
 			}
+		case 2:
+			state->config.disable_systemd_cleanup = true;
 		}
 	}
 	return 0;
@@ -473,7 +479,9 @@ int main(int argc, char *argv[]) {
 	}
 	free(mounts);
 
-	cleanup_systemd(&state);
+	if (!state.config.disable_systemd_cleanup) {
+		cleanup_systemd(&state);
+	}
 
 	state.modification_end = time(NULL);
 
