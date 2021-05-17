@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,7 +18,13 @@
 #include <convirter/oci/layer.h>
 #include <guestfs.h>
 
-static const char usage[] = "Usage: v2c INPUT OUTPUT";
+static const char usage[] = \
+	"Usage: %s [OPTION]... INPUT OUTPUT\n"
+	"Convert a VM image into OCI-compatible container image.\n";
+
+static const struct option long_options[] = {
+	{0},
+};
 
 // TODO: we may want this individually configurable
 static const char *temporary_paths[] = {
@@ -39,6 +46,17 @@ struct v2c_state {
 	time_t modification_start, modification_end, source_date_epoch;
 	bool set_modification_epoch;
 };
+
+static int parse_options(struct v2c_state *state, int argc, char *argv[]) {
+	int opt;
+	while ((opt = getopt_long(argc, argv, "", long_options, NULL)) != -1) {
+		switch (opt) {
+		case '?':
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
 
 static int dump_file_content(struct v2c_state *state, const char *path, int64_t size) {
 	// guestfs_read_file does guestfs_download and reads the whole file into memory
@@ -310,8 +328,8 @@ static int setup_systemd_config(struct cvirt_oci_config *config) {
 int main(int argc, char *argv[]) {
 	struct v2c_state state = {0};
 	int res = 0;
-	if (argc != 3) {
-		puts(usage);
+	if (parse_options(&state, argc, argv) < 0 || argc - optind != 2) {
+		fprintf(stderr, usage, argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
@@ -325,7 +343,7 @@ int main(int argc, char *argv[]) {
 	if (!state.guestfs) {
 		exit(EXIT_FAILURE);
 	}
-	res = guestfs_add_drive_opts(state.guestfs, argv[1],
+	res = guestfs_add_drive_opts(state.guestfs, argv[optind],
 		GUESTFS_ADD_DRIVE_OPTS_READONLY, 1, -1);
 	if (res < 0) {
 		exit(EXIT_FAILURE);
@@ -444,7 +462,7 @@ int main(int argc, char *argv[]) {
 	cvirt_oci_manifest_close(manifest);
 
 	struct cvirt_oci_blob *manifest_blob = cvirt_oci_blob_from_manifest(manifest);
-	struct cvirt_oci_image *image = cvirt_oci_image_new(argv[2]);
+	struct cvirt_oci_image *image = cvirt_oci_image_new(argv[optind + 1]);
 	cvirt_oci_image_add_blob(image, layer_blob);
 	cvirt_oci_image_add_blob(image, config_blob);
 	cvirt_oci_image_add_manifest(image, manifest_blob);
