@@ -1,0 +1,9 @@
+#!/bin/busybox ash
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sys /sys
+/bin/busybox mount -t devtmpfs dev /dev
+/sbin/modprobe e1000
+/bin/busybox ip l set eth0 up
+/bin/busybox udhcpc -fqs /udhcpc.script
+exec /bin/busybox setsid /bin/busybox ash -c 'exec /bin/busybox ash </dev/ttyS0 >/dev/ttyS0 2>&1'
+/bin/busybox poweroff -f
