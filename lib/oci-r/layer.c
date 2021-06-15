@@ -49,7 +49,6 @@ struct cvirt_oci_r_layer *cvirt_oci_r_layer_from_archive_blob(const char *path,
 		archive_read_support_filter_gzip(layer->layer_archive);
 		break;
 	case CVIRT_OCI_R_LAYER_COMPRESSION_ZSTD:
-		fprintf(stderr, "zstd\n");
 		archive_read_support_filter_zstd(layer->layer_archive);
 		break;
 	case CVIRT_OCI_R_LAYER_COMPRESSION_NONE:

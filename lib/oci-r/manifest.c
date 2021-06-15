@@ -98,7 +98,6 @@ enum cvirt_oci_r_layer_compression cvirt_oci_r_manifest_get_layer_compression(
 		return -EINVAL;
 	}
 	const char *type = json_object_get_string(media_type);
-	fprintf(stderr, "cvirt_oci_r_manifest_get_layer_compression: mediaType: %s\n", type);
 	if (!strcmp("application/vnd.oci.image.layer.v1.tar", type)) {
 		return CVIRT_OCI_R_LAYER_COMPRESSION_NONE;
 	} else if (!strcmp("application/vnd.oci.image.layer.v1.tar+zstd", type)) {
