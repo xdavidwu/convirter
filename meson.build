@@ -17,3 +17,4 @@ libconvirter = library(
 )
 
 subdir('src')
+subdir('tests')
