@@ -5,5 +5,13 @@
 /sbin/modprobe e1000
 /bin/busybox ip l set eth0 up
 /bin/busybox udhcpc -fqs /udhcpc.script
-exec /bin/busybox setsid /bin/busybox ash -c 'exec /bin/busybox ash </dev/ttyS0 >/dev/ttyS0 2>&1'
+/sbin/modprobe btrfs
+/bin/busybox mount /dev/sdb /mnt
+#exec /bin/busybox setsid /bin/busybox ash -c 'exec /bin/busybox ash </dev/ttyS0 >/dev/ttyS0 2>&1'
+/bin/busybox mount -o move /dev /mnt/dev
+/bin/busybox mount -o move /sys /mnt/sys
+/bin/busybox mount -o move /proc /mnt/proc
+/bin/busybox pivot_root /mnt /mnt/boot
+/sbin/umount /boot
+exec /sbin/init
 /bin/busybox poweroff -f
