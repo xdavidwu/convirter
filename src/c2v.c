@@ -28,7 +28,8 @@ static int set_attr(guestfs_h *guestfs, const char *path,
 		}
 		guestfs_lsetxattr(guestfs, name, val, sz, path);
 	}
-	return 0;
+	return guestfs_utimens(guestfs, path, stat->st_atim.tv_sec,
+		stat->st_atim.tv_nsec, stat->st_mtim.tv_sec, stat->st_mtim.tv_nsec);
 }
 
 static int dump_file(guestfs_h *guestfs, struct archive *archive,
