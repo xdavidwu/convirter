@@ -14,7 +14,7 @@ const char *cvirt_oci_r_manifest_get_config_digest(
 int cvirt_oci_r_manifest_get_layers_length(
 	struct cvirt_oci_r_manifest *manifest);
 
-const char * cvirt_oci_r_manifest_get_layer_digest(
+const char *cvirt_oci_r_manifest_get_layer_digest(
 	struct cvirt_oci_r_manifest *manifest, int index);
 
 enum cvirt_oci_r_layer_compression cvirt_oci_r_manifest_get_layer_compression(
