@@ -125,6 +125,26 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 	return 0;
 }
 
+static const char c2v_init_path[] = "/.c2v_init";
+
+static int generate_init_script(guestfs_h *guestfs) {
+	guestfs_rm_rf(guestfs, c2v_init_path);
+	const char pre_env[] =
+		"/.c2v/busybox umount -r /.old_root\n";
+	int res = guestfs_write_append(guestfs, c2v_init_path, pre_env,
+		strlen(pre_env));
+	if (res < 0) {
+		return res;
+	}
+	const char boot[] = "exec /sbin/init\n";
+	res = guestfs_write_append(guestfs, c2v_init_path, boot, strlen(boot));
+	if (res < 0) {
+		return res;
+	}
+	res = guestfs_chmod(guestfs, 0100, c2v_init_path);
+	return 0;
+}
+
 int main(int argc, char *argv[]) {
 	if (argc != 3) {
 		exit(EXIT_FAILURE);
@@ -179,6 +199,7 @@ int main(int argc, char *argv[]) {
 		dump_layer(guestfs, archive);
 		cvirt_oci_r_layer_destroy(layer);
 	}
+	generate_init_script(guestfs);
 	cvirt_oci_r_manifest_destroy(manifest);
 	cvirt_oci_r_index_destroy(index);
 
