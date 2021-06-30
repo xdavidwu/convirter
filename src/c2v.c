@@ -66,8 +66,18 @@ static int dump_file(guestfs_h *guestfs, struct archive *archive,
 static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 	// TODO: whiteouts
 	struct archive_entry *entry;
-	int res = 0;
-	while (archive_read_next_header(archive, &entry) == ARCHIVE_OK) {
+	int res = archive_read_next_header(archive, &entry);
+	while (res != ARCHIVE_EOF && res != ARCHIVE_FATAL) {
+		if (res == ARCHIVE_WARN) {
+			fprintf(stderr, "warning: %s: %s\n",
+				archive_entry_pathname(entry),
+				archive_error_string(archive));
+		} else if (res == ARCHIVE_RETRY) {
+			fprintf(stderr, "warning: %s: %s, retry\n",
+				archive_entry_pathname(entry),
+				archive_error_string(archive));
+			goto next;
+		}
 		const struct stat *stat = archive_entry_stat(entry);
 		const char *path = archive_entry_pathname(entry);
 		char *abs_path = calloc(2 + strlen(path), sizeof(char));
@@ -112,9 +122,10 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 			} else {
 				fprintf(stderr, "dump_layer: unrecognized file type at %s\n", path);
 			}
-			continue;
+			goto next;
 		}
 		if (res < 0) {
+			fputs(guestfs_last_error(guestfs), stderr);
 			return res;
 		}
 		res = set_attr(guestfs, abs_path, entry, stat);
@@ -122,6 +133,11 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 			return res;
 		}
 		free(abs_path);
+next:
+		res = archive_read_next_header(archive, &entry);
+	}
+	if (res == ARCHIVE_FATAL) {
+		fprintf(stderr, "fatal: %s\n", archive_error_string(archive));
 	}
 	return 0;
 }
