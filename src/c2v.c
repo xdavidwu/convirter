@@ -84,12 +84,12 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 		const char *link;
 		abs_path[0] = '/';
 		strcat(abs_path, path);
-		guestfs_rm_rf(guestfs, abs_path);
 		switch (stat->st_mode & S_IFMT) {
 		case S_IFLNK:
-			res = guestfs_ln_s(guestfs, archive_entry_symlink(entry), abs_path);
+			res = guestfs_ln_sf(guestfs, archive_entry_symlink(entry), abs_path);
 			break;
 		case S_IFREG:
+			guestfs_rm_f(guestfs, abs_path);
 			res = guestfs_mknod(guestfs, stat->st_mode,
 				major(stat->st_rdev), minor(stat->st_rdev),
 				abs_path);
@@ -99,12 +99,13 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 			res = dump_file(guestfs, archive, abs_path, stat);
 			break;
 		case S_IFDIR:
-			res = guestfs_mkdir_mode(guestfs, abs_path, stat->st_mode);
+			guestfs_mkdir_mode(guestfs, abs_path, stat->st_mode);
 			break;
 		case S_IFSOCK:
 		case S_IFBLK:
 		case S_IFCHR:
 		case S_IFIFO:
+			guestfs_rm_f(guestfs, abs_path);
 			res = guestfs_mknod(guestfs, stat->st_mode,
 				major(stat->st_rdev), minor(stat->st_rdev),
 				abs_path);
@@ -117,7 +118,7 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 					sizeof(char));
 				abs_target[0] = '/';
 				strcat(abs_target, link);
-				res = guestfs_ln(guestfs, abs_target, abs_path);
+				res = guestfs_ln_f(guestfs, abs_target, abs_path);
 				free(abs_target);
 			} else {
 				fprintf(stderr, "dump_layer: unrecognized file type at %s\n", path);
