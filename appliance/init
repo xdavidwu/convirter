@@ -14,12 +14,13 @@
 /sbin/modprobe overlay
 /bin/busybox mount -t overlay -olowerdir=/mnt/lower,upperdir=/tmp/upper,workdir=/tmp/work overlay /mnt/merged
 
+/bin/busybox mkdir -p /mnt/merged/dev /mnt/merged/sys /mnt/merged/proc
 /bin/busybox mount -o move /dev /mnt/merged/dev
 /bin/busybox mount -o move /sys /mnt/merged/sys
 /bin/busybox mount -o move /proc /mnt/merged/proc
 
 MODULES_PATH="/lib/modules/$(/bin/busybox uname -r)"
-/bin/busybox mkdir /mnt/merged/.old_root /mnt/merged"$MODULES_PATH"
+/bin/busybox mkdir -p /mnt/merged/.old_root /mnt/merged"$MODULES_PATH"
 # See mount(8)
 /bin/busybox mount -o bind "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
 /bin/busybox mount -o remount,bind,ro,nodev,noexec "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
