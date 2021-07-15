@@ -379,6 +379,8 @@ int main(int argc, char *argv[]) {
 		state.config.source_date_epoch = atoll(source_date_epoch_env);
 	}
 
+	state.modification_start = time(NULL);
+
 	state.guestfs = guestfs_create();
 	if (!state.guestfs) {
 		exit(EXIT_FAILURE);
@@ -440,8 +442,6 @@ int main(int argc, char *argv[]) {
 	state.layer_archive = cvirt_oci_layer_get_libarchive(layer);
 	archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
 		archive_format(state.layer_archive));
-
-	state.modification_start = time(NULL);
 
 	char **mounts = guestfs_inspect_get_mountpoints(state.guestfs, target_root);
 	free(target_root);
