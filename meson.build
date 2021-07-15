@@ -1,6 +1,7 @@
 project('convirter', 'c')
 
 libarchive = dependency('libarchive')
+libgcrypt = dependency('libgcrypt')
 libguestfs = dependency('libguestfs')
 json_c = dependency('json-c')
 
@@ -13,7 +14,7 @@ libconvirter = library(
   'convirter',
   libconvirter_files,
   include_directories: [libconvirter_include],
-  dependencies: [libarchive, json_c]
+  dependencies: [libarchive, libgcrypt, json_c]
 )
 
 subdir('src')
