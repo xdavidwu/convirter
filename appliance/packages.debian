@@ -1,1 +1,6 @@
 busybox-static
+# supermin, at least 5.1.20, fails on apt systems when there are no
+# configuration files in required packages (executes `apt download` without
+# packages and that fails), let's work around this by installing an extra
+# package with conf file for now
+base-files
