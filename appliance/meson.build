@@ -32,7 +32,7 @@ init_tar = custom_target('gen-init-tar',
 
 full_appliance = custom_target('supermin-build',
   output: 'appliance.d',
-  command: [supermin, '--build', '@OUTDIR@' / 'supermin.d', '-f', 'ext2', '-o', '@OUTPUT@'],
+  command: [supermin, '--build', '@OUTDIR@' / 'supermin.d', '-f', 'ext2', '--size', '512M', '-o', '@OUTPUT@'],
   env: {'LC_ALL': 'C'},
   build_by_default: true,
   depends: [supermin_appliance, init_tar])
