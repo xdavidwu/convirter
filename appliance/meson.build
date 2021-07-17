@@ -28,22 +28,15 @@ supermin_appliance = custom_target('supermin-prepare',
 init_tar = custom_target('gen-init-tar',
   input: ['init', 'udhcpc.script'],
   output: 'init.tar.gz',
-  command: [tar, 'zcf', '@OUTPUT@', '@INPUT@'])
-
-cp = find_program('cp')
-# meson does not check output after command
-copy_init_tar = custom_target('copy-init-tar',
-  output: 'dummy',
-  command: [cp, '@OUTDIR@' / 'init.tar.gz', '@OUTDIR@' / 'supermin.d' / 'init.tar.gz'],
-  build_by_default: true,
-  depends: [supermin_appliance, init_tar])
+  command: [tar, 'zcf', '@OUTDIR@' / 'supermin.d' / 'init.tar.gz', '@INPUT@'],
+  depends: [supermin_appliance])
 
 full_appliance = custom_target('supermin-build',
   output: 'appliance.d',
   command: [supermin, '--build', '@OUTDIR@' / 'supermin.d', '-f', 'ext2', '-o', '@OUTPUT@'],
   env: {'LC_ALL': 'C'},
   build_by_default: true,
-  depends: copy_init_tar)
+  depends: [supermin_appliance, init_tar])
 
 qemu = find_program('qemu-system-x86_64')
 appliance = '@BUILD_ROOT@' / 'appliance.d'
