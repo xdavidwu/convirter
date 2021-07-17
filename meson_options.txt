@@ -1,0 +1,2 @@
+option('build_appliance', type: 'feature', value: 'auto', description:
+  'Build the appliance image used for booting VMs from c2v, requires supermin')

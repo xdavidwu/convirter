@@ -4,6 +4,7 @@ libarchive = dependency('libarchive')
 libgcrypt = dependency('libgcrypt')
 libguestfs = dependency('libguestfs')
 json_c = dependency('json-c')
+supermin = find_program('supermin', required: get_option('build_appliance'))
 
 libconvirter_files = []
 libconvirter_include = include_directories('include')
@@ -17,6 +18,8 @@ libconvirter = library(
   dependencies: [libarchive, libgcrypt, json_c]
 )
 
-subdir('appliance')
+if supermin.found()
+  subdir('appliance')
+endif
 subdir('src')
 subdir('tools')

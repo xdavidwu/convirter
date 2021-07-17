@@ -1,4 +1,3 @@
-supermin = find_program('supermin')
 tar = find_program('tar')
 grep = find_program('grep')
 sh = find_program('sh')
