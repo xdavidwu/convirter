@@ -17,5 +17,6 @@ libconvirter = library(
   dependencies: [libarchive, libgcrypt, json_c]
 )
 
+subdir('appliance')
 subdir('src')
 subdir('tools')

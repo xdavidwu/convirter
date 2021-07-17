@@ -1,5 +1,3 @@
-project('test', 'c')
-
 supermin = find_program('supermin')
 tar = find_program('tar')
 grep = find_program('grep')
@@ -22,14 +20,15 @@ cp = find_program('cp')
 # meson does not check output after command
 copy_init_tar = custom_target('copy-init-tar',
   output: 'dummy',
-  command: [cp, '@BUILD_ROOT@' / 'init.tar.gz', '@BUILD_ROOT@' / 'supermin.d' / 'init.tar.gz'],
+  command: [cp, '@OUTDIR@' / 'init.tar.gz', '@OUTDIR@' / 'supermin.d' / 'init.tar.gz'],
   build_by_default: true,
   depends: [supermin_appliance, init_tar])
 
 full_appliance = custom_target('supermin-build',
   output: 'appliance.d',
-  command: [supermin, '--build', 'supermin.d', '-f', 'ext2', '-o', '@OUTPUT@'],
+  command: [supermin, '--build', '@OUTDIR@' / 'supermin.d', '-f', 'ext2', '-o', '@OUTPUT@'],
   env: {'LC_ALL': 'C'},
+  build_by_default: true,
   depends: copy_init_tar)
 
 qemu = find_program('qemu-system-x86_64')
