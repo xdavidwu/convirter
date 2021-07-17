@@ -3,13 +3,13 @@ tar = find_program('tar')
 grep = find_program('grep')
 sh = find_program('sh')
 
-id_like = run_command(sh, '-c', '. /etc/os-release && printf "%s" "$ID_LIKE"').stdout()
+id_like = run_command(sh, '-c', '. /etc/os-release && printf "%s" "$ID_LIKE"').stdout().split(' ')
 id = run_command(sh, '-c', '. /etc/os-release && printf "%s" "$ID"').stdout()
 
-if id == 'arch' or id_like == 'arch'
+if id == 'arch' or id_like.contains('arch')
   message('Using packages list for Arch Linux')
   packages_list = 'packages.archlinux'
-elif id == 'debian' or id_like == 'debian'
+elif id == 'debian' or id_like.contains('debian')
   message('Using packages list for Debian')
   packages_list = 'packages.debian'
 else
