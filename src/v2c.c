@@ -44,7 +44,7 @@ static const char *temporary_paths[] = {
 	NULL,
 };
 
-static const int bufsz = 3 * 1024 * 1024;
+static const int bufsz = 4000 * 1024;
 
 struct v2c_state {
 	guestfs_h *guestfs;

@@ -11,7 +11,7 @@
 #include <string.h>
 #include <sys/sysmacros.h>
 
-static const int bufsz = 3 * 1024 * 1024;
+static const int bufsz = 4000 * 1024;
 
 static int set_attr(guestfs_h *guestfs, const char *path,
 		struct archive_entry *entry, const struct stat *stat) {
