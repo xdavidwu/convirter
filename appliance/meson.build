@@ -38,8 +38,4 @@ full_appliance = custom_target('supermin-build',
   build_by_default: true,
   depends: [supermin_appliance, init_tar])
 
-qemu = find_program('qemu-system-x86_64')
-appliance = '@BUILD_ROOT@' / 'appliance.d'
-run_target('test-appliance',
-  command: [qemu, '-enable-kvm', '-nographic', '-nodefaults', '-kernel', appliance / 'kernel', '-initrd', appliance / 'initrd', '-hda', appliance / 'root', '-serial', 'stdio', '-append', 'console=ttyS0 root=/dev/sda panic=-1', '-netdev', 'user,id=user.0', '-device', 'e1000,netdev=user.0', '-no-reboot' ],
-  depends: full_appliance)
+appliance = '@BUILD_ROOT@' / 'appliance' / 'appliance.d'
