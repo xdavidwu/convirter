@@ -1,9 +1,23 @@
 supermin = find_program('supermin')
 tar = find_program('tar')
 grep = find_program('grep')
+sh = find_program('sh')
 
-# TODO: other distros
-packages = run_command(grep, '-v', '^#', '--', 'packages.archlinux').stdout().strip().split('\n')
+id_like = run_command(sh, '-c', '. /etc/os-release && printf "%s" "$ID_LIKE"').stdout()
+id = run_command(sh, '-c', '. /etc/os-release && printf "%s" "$ID"').stdout()
+
+if id == 'arch' or id_like == 'arch'
+  message('Using packages list for Arch Linux')
+  packages_list = 'packages.archlinux'
+elif id == 'debian' or id_like == 'debian'
+  message('Using packages list for Debian')
+  packages_list = 'packages.debian'
+else
+  warning('Using generic packages list for appliance')
+  packages_list = 'packages.generic'
+endif
+
+packages = run_command(grep, '-v', '^#', '--', packages_list).stdout().strip().split('\n')
 # custom_target directory itself as output seems to work
 supermin_appliance = custom_target('supermin-prepare',
   output: 'supermin.d',
