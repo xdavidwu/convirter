@@ -6,4 +6,5 @@ hello_world_oci = custom_target('skopeo-download-hello-world',
 
 test('c2v converts hello-world',
   c2v,
-  args: [hello_world_oci, 'hello-world.qcow2'])
+  args: [hello_world_oci, 'hello-world.qcow2'],
+  timeout: 60)
