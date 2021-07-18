@@ -21,5 +21,10 @@ libconvirter = library(
 if supermin.found()
   subdir('appliance')
 endif
+
 subdir('src')
 subdir('tools')
+
+if get_option('e2e_tests')
+  subdir('tests')
+endif
