@@ -36,26 +36,31 @@ supermin_appliance = custom_target('supermin-prepare',
   command: [supermin, '--prepare', packages, '-o', '@OUTPUT@'],
   env: {'LC_ALL': 'C'})
 
-busybox_path_replace = generator(sed,
-  output: '@BASENAME@',
-  arguments: ['s|@BUSYBOX_PATH@|' + busybox_path + '|g', '@INPUT@'],
+init = custom_target('generate-init',
+  input: 'init.in',
+  output: 'init',
+  command: [sed, 's|@BUSYBOX_PATH@|' + busybox_path + '|g', '@INPUT@'],
   capture: true)
 
-copy = generator(cp,
-  output: '@PLAINNAME@',
-  arguments: ['@INPUT@', '@OUTPUT@'])
+udhcpc_script = custom_target('generate-udhcpc.script',
+  input: 'udhcpc.script.in',
+  output: 'udhcpc.script',
+  command: [sed, 's|@BUSYBOX_PATH@|' + busybox_path + '|g', '@INPUT@'],
+  capture: true)
+
+setuidgid = custom_target('copy-setuidgid',
+  input: 'setuidgid',
+  output: 'setuidgid',
+  command: [cp, '@INPUT@', '@OUTPUT@'])
 
 # custom_target does not work with output under directories
 init_tar = custom_target('gen-init-tar',
-  input: [
-    busybox_path_replace.process('init.in'),
-    busybox_path_replace.process('udhcpc.script.in'),
-    copy.process('setuidgid')],
+  input: [init, udhcpc_script, setuidgid],
   output: 'init.tar.gz',
   command: [
     tar,
     '-zcf', '@OUTDIR@' / 'supermin.d' / 'init.tar.gz',
-    '-C', '@OUTDIR@' / 'init.tar.gz.p',
+    '-C', '@OUTDIR@',
     '--numeric-owner', '--owner=0', '--group=0', '--mode=500',
     'init', 'udhcpc.script', 'setuidgid'],
   depends: [supermin_appliance])
