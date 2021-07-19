@@ -22,14 +22,14 @@ HOSTNAME=$(busybox head -c 6 /dev/urandom | busybox xxd -p)
 echo "$HOSTNAME" > /etc/hostname
 busybox hostname "$HOSTNAME"
 
-modprobe e1000
+modprobe e1000 || true
 busybox ip l set eth0 up
 busybox udhcpc -fqs /udhcpc.script
 
-modprobe btrfs
+modprobe btrfs || true
 busybox mkdir -p /mnt/lower /tmp/upper /tmp/work /mnt/merged
 busybox mount /dev/sdb /mnt/lower
-modprobe overlay
+modprobe overlay || true
 busybox mount -t overlay -olowerdir=/mnt/lower,upperdir=/tmp/upper,workdir=/tmp/work overlay /mnt/merged
 
 busybox mkdir -p /mnt/merged/dev /mnt/merged/sys /mnt/merged/proc
