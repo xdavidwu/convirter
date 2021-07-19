@@ -1,10 +1,12 @@
 #!/bin/busybox ash
 
+set -e
+
 BUSYBOX=$(/bin/busybox readlink -f /bin/busybox)
 
 alias busybox="$BUSYBOX"
 
-MODPROBE_NON_BUSYBOX=$(busybox which modprobe)
+MODPROBE_NON_BUSYBOX=$(busybox which modprobe || true)
 
 [ -n "$MODPROBE_NON_BUSYBOX" ] && alias modprobe="$MODPROBE_NON_BUSYBOX" || alias modprobe="$BUSYBOX modprobe"
 
