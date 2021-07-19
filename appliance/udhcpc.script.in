@@ -1,7 +1,7 @@
-#!/bin/busybox ash
+#!@BUSYBOX_PATH@ ash
 # udhcpc script edited by Tim Riker <Tim@Rikers.org>
 
-BUSYBOX=$(/bin/busybox readlink -f /bin/busybox)
+BUSYBOX=$(@BUSYBOX_PATH@ readlink -f @BUSYBOX_PATH@)
 
 alias busybox="$BUSYBOX"
 

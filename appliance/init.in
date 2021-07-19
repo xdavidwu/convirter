@@ -1,8 +1,8 @@
-#!/bin/busybox ash
+#!@BUSYBOX_PATH@ ash
 
 set -e
 
-BUSYBOX=$(/bin/busybox readlink -f /bin/busybox)
+BUSYBOX=$(@BUSYBOX_PATH@ readlink -f @BUSYBOX_PATH@)
 
 alias busybox="$BUSYBOX"
 
@@ -36,7 +36,7 @@ busybox mount -o move /dev /mnt/merged/dev
 busybox mount -o move /sys /mnt/merged/sys
 busybox mount -o move /proc /mnt/merged/proc
 
-MODULES_PATH="/lib/modules/$(/bin/busybox uname -r)"
+MODULES_PATH="/lib/modules/$(busybox uname -r)"
 busybox mkdir -p /mnt/merged/.old_root /mnt/merged"$MODULES_PATH"
 # See mount(8)
 busybox mount -o bind "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
