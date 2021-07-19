@@ -25,9 +25,9 @@ supermin_appliance = custom_target('supermin-prepare',
 
 # custom_target does not work with output under directories
 init_tar = custom_target('gen-init-tar',
-  input: ['init', 'udhcpc.script'],
+  input: ['init', 'udhcpc.script', 'setuidgid'],
   output: 'init.tar.gz',
-  command: [tar, '-zcf', '@OUTDIR@' / 'supermin.d' / 'init.tar.gz', '-C', '@CURRENT_SOURCE_DIR@', 'init', 'udhcpc.script'],
+  command: [tar, '-zcf', '@OUTDIR@' / 'supermin.d' / 'init.tar.gz', '-C', '@CURRENT_SOURCE_DIR@', 'init', 'udhcpc.script', 'setuidgid'],
   depends: [supermin_appliance])
 
 full_appliance = custom_target('supermin-build',

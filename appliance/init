@@ -46,6 +46,10 @@ busybox touch /mnt/merged/.c2v/busybox
 busybox mount -o bind "$BUSYBOX" /mnt/merged/.c2v/busybox
 busybox mount -o remount,bind,ro "$BUSYBOX" /mnt/merged/.c2v/busybox
 
+busybox touch /mnt/merged/.c2v/setuidgid
+busybox mount -o bind /setuidgid /mnt/merged/.c2v/setuidgid
+busybox mount -o remount,bind,ro /setuidgid /mnt/merged/.c2v/setuidgid
+
 busybox mkdir -p /mnt/merged/etc
 busybox touch /mnt/merged/etc/resolv.conf
 busybox mount -o bind /etc/resolv.conf /mnt/merged/etc/resolv.conf
