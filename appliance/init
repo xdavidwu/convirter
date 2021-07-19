@@ -40,7 +40,6 @@ busybox mkdir -p /mnt/merged/.old_root /mnt/merged"$MODULES_PATH"
 busybox mount -o bind "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
 busybox mount -o remount,bind,ro,nodev,noexec "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
 
-busybox mkdir /mnt/merged/.c2v
 busybox touch /mnt/merged/.c2v/busybox
 busybox mount -o bind "$BUSYBOX" /mnt/merged/.c2v/busybox
 busybox mount -o remount,bind,ro "$BUSYBOX" /mnt/merged/.c2v/busybox
@@ -58,4 +57,4 @@ busybox umount /tmp
 
 busybox pivot_root /mnt/merged/ /mnt/merged/.old_root
 
-exec /.c2v/busybox ash /.c2v_init
+exec /.c2v/busybox ash /.c2v/init

@@ -143,7 +143,8 @@ next:
 	return 0;
 }
 
-static const char c2v_init_path[] = "/.c2v_init";
+static const char c2v_init_path[] = "/.c2v/init";
+static const char c2v_dir_path[] = "/.c2v";
 
 static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
 		const char *string) {
@@ -183,6 +184,7 @@ static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
  */
 static int generate_init_script(guestfs_h *guestfs,
 		struct cvirt_oci_r_config *config) {
+	guestfs_mkdir_p(guestfs, c2v_dir_path);
 	guestfs_rm_rf(guestfs, c2v_init_path);
 	const char pre_env[] =
 		C2V_BUSYBOX " umount -r /.old_root\n";
