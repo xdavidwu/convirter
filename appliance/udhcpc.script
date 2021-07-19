@@ -1,5 +1,9 @@
-#!/bin/sh
+#!/bin/busybox ash
 # udhcpc script edited by Tim Riker <Tim@Rikers.org>
+
+BUSYBOX=$(/bin/busybox readlink -f /bin/busybox)
+
+alias busybox="$BUSYBOX"
 
 RESOLV_CONF="/etc/resolv.conf"
 
@@ -45,9 +49,9 @@ case "$1" in
 		# pointing to /run/resolv.conf), make sure things work.
 		if test -L "$RESOLV_CONF"; then
 			# If it's a dangling symlink, try to create the target.
-			test -e "$RESOLV_CONF" || touch "$RESOLV_CONF"
+			test -e "$RESOLV_CONF" || busybox touch "$RESOLV_CONF"
 		fi
-		realconf=$(readlink -f "$RESOLV_CONF" 2>/dev/null || echo "$RESOLV_CONF")
+		realconf=$(busybox readlink -f "$RESOLV_CONF" 2>/dev/null || echo "$RESOLV_CONF")
 		echo "Recreating $realconf"
 		tmpfile="$realconf-$$"
 		> "$tmpfile"
