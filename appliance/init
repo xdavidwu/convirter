@@ -4,19 +4,23 @@ BUSYBOX=$(/bin/busybox readlink -f /bin/busybox)
 
 alias busybox="$BUSYBOX"
 
+MODPROBE_NON_BUSYBOX=$(busybox which modprobe)
+
+[ -n "$MODPROBE_NON_BUSYBOX" ] && alias modprobe="$MODPROBE_NON_BUSYBOX" || alias modprobe="$BUSYBOX modprobe"
+
 busybox mount -t proc proc /proc
 busybox mount -t sysfs sys /sys
 busybox mount -t devtmpfs dev /dev
 busybox mount -t tmpfs tmpfs /tmp
 
-/sbin/modprobe e1000
+modprobe e1000
 busybox ip l set eth0 up
 busybox udhcpc -fqs /udhcpc.script
 
-/sbin/modprobe btrfs
+modprobe btrfs
 busybox mkdir -p /mnt/lower /tmp/upper /tmp/work /mnt/merged
 busybox mount /dev/sdb /mnt/lower
-/sbin/modprobe overlay
+modprobe overlay
 busybox mount -t overlay -olowerdir=/mnt/lower,upperdir=/tmp/upper,workdir=/tmp/work overlay /mnt/merged
 
 busybox mkdir -p /mnt/merged/dev /mnt/merged/sys /mnt/merged/proc
