@@ -10,6 +10,7 @@ MODPROBE_NON_BUSYBOX=$(busybox which modprobe || true)
 
 [ -n "$MODPROBE_NON_BUSYBOX" ] && alias modprobe="$MODPROBE_NON_BUSYBOX" || alias modprobe="$BUSYBOX modprobe"
 
+busybox mkdir -p /proc /sys /dev /tmp
 busybox mount -t proc proc /proc
 busybox mount -t sysfs sys /sys
 busybox mount -t devtmpfs dev /dev
