@@ -1,38 +1,43 @@
 #!/bin/busybox ash
-/bin/busybox mount -t proc proc /proc
-/bin/busybox mount -t sysfs sys /sys
-/bin/busybox mount -t devtmpfs dev /dev
-/bin/busybox mount -t tmpfs tmpfs /tmp
+
+BUSYBOX=$(/bin/busybox readlink -f /bin/busybox)
+
+alias busybox="$BUSYBOX"
+
+busybox mount -t proc proc /proc
+busybox mount -t sysfs sys /sys
+busybox mount -t devtmpfs dev /dev
+busybox mount -t tmpfs tmpfs /tmp
 
 /sbin/modprobe e1000
-/bin/busybox ip l set eth0 up
-/bin/busybox udhcpc -fqs /udhcpc.script
+busybox ip l set eth0 up
+busybox udhcpc -fqs /udhcpc.script
 
 /sbin/modprobe btrfs
-/bin/busybox mkdir -p /mnt/lower /tmp/upper /tmp/work /mnt/merged
-/bin/busybox mount /dev/sdb /mnt/lower
+busybox mkdir -p /mnt/lower /tmp/upper /tmp/work /mnt/merged
+busybox mount /dev/sdb /mnt/lower
 /sbin/modprobe overlay
-/bin/busybox mount -t overlay -olowerdir=/mnt/lower,upperdir=/tmp/upper,workdir=/tmp/work overlay /mnt/merged
+busybox mount -t overlay -olowerdir=/mnt/lower,upperdir=/tmp/upper,workdir=/tmp/work overlay /mnt/merged
 
-/bin/busybox mkdir -p /mnt/merged/dev /mnt/merged/sys /mnt/merged/proc
-/bin/busybox mount -o move /dev /mnt/merged/dev
-/bin/busybox mount -o move /sys /mnt/merged/sys
-/bin/busybox mount -o move /proc /mnt/merged/proc
+busybox mkdir -p /mnt/merged/dev /mnt/merged/sys /mnt/merged/proc
+busybox mount -o move /dev /mnt/merged/dev
+busybox mount -o move /sys /mnt/merged/sys
+busybox mount -o move /proc /mnt/merged/proc
 
 MODULES_PATH="/lib/modules/$(/bin/busybox uname -r)"
-/bin/busybox mkdir -p /mnt/merged/.old_root /mnt/merged"$MODULES_PATH"
+busybox mkdir -p /mnt/merged/.old_root /mnt/merged"$MODULES_PATH"
 # See mount(8)
-/bin/busybox mount -o bind "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
-/bin/busybox mount -o remount,bind,ro,nodev,noexec "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
+busybox mount -o bind "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
+busybox mount -o remount,bind,ro,nodev,noexec "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
 
-/bin/busybox mkdir /mnt/merged/.c2v
-/bin/busybox touch /mnt/merged/.c2v/busybox
-/bin/busybox mount -o bind /bin/busybox /mnt/merged/.c2v/busybox
-/bin/busybox mount -o remount,bind,ro /bin/busybox /mnt/merged/.c2v/busybox
+busybox mkdir /mnt/merged/.c2v
+busybox touch /mnt/merged/.c2v/busybox
+busybox mount -o bind "$BUSYBOX" /mnt/merged/.c2v/busybox
+busybox mount -o remount,bind,ro "$BUSYBOX" /mnt/merged/.c2v/busybox
 
-/bin/busybox umount /mnt/lower
-/bin/busybox umount /tmp
+busybox umount /mnt/lower
+busybox umount /tmp
 
-/bin/busybox pivot_root /mnt/merged/ /mnt/merged/.old_root
+busybox pivot_root /mnt/merged/ /mnt/merged/.old_root
 
 exec /.c2v/busybox ash /.c2v_init
