@@ -24,6 +24,7 @@ busybox hostname "$HOSTNAME"
 
 modprobe e1000 || true
 busybox ip l set eth0 up
+modprobe af_packet || true
 busybox udhcpc -fqs /udhcpc.script
 
 modprobe btrfs || true
