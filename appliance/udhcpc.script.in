@@ -1,7 +1,7 @@
 #!@BUSYBOX_PATH@ ash
 # udhcpc script edited by Tim Riker <Tim@Rikers.org>
 
-BUSYBOX=$(@BUSYBOX_PATH@ readlink -f @BUSYBOX_PATH@)
+BUSYBOX=$(@BUSYBOX_PATH@ realpath @BUSYBOX_PATH@)
 
 alias busybox="$BUSYBOX"
 
@@ -51,7 +51,7 @@ case "$1" in
 			# If it's a dangling symlink, try to create the target.
 			test -e "$RESOLV_CONF" || busybox touch "$RESOLV_CONF"
 		fi
-		realconf=$(busybox readlink -f "$RESOLV_CONF" 2>/dev/null || echo "$RESOLV_CONF")
+		realconf=$(busybox realpath "$RESOLV_CONF" 2>/dev/null || echo "$RESOLV_CONF")
 		echo "Recreating $realconf"
 		tmpfile="$realconf-$$"
 		> "$tmpfile"

@@ -2,7 +2,7 @@
 
 set -e
 
-BUSYBOX=$(@BUSYBOX_PATH@ readlink -f @BUSYBOX_PATH@)
+BUSYBOX=$(@BUSYBOX_PATH@ realpath @BUSYBOX_PATH@)
 
 alias busybox="$BUSYBOX"
 
