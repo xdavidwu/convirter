@@ -18,7 +18,7 @@ busybox mount -t tmpfs tmpfs /tmp
 
 busybox mkdir -p /etc
 
-HOSTNAME=$(busybox head -c 6 /dev/urandom | busybox xxd -p)
+HOSTNAME=$(busybox head -c 6 /dev/urandom | busybox hexdump -e '6/1 "%02x"')
 echo "$HOSTNAME" > /etc/hostname
 busybox hostname "$HOSTNAME"
 
