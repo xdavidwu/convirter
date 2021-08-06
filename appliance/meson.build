@@ -19,10 +19,6 @@ elif id == 'fedora' or id_like.contains('fedora')
   message('Using packages list for Fedora')
   packages_list = 'packages.fedora'
   busybox_path = '/sbin/busybox'
-elif id == 'opensuse' or id_like.contains('opensuse')
-  message('Using packages list for openSUSE')
-  packages_list = 'packages.opensuse'
-  busybox_path = '/usr/bin/busybox-static'
 else
   warning('Using generic packages list for appliance')
   packages_list = 'packages.generic'
