@@ -16,7 +16,7 @@ elif id == 'debian' or id_like.contains('debian')
   message('Using packages list for Debian')
   packages_list = 'packages.debian'
   busybox_path = '/bin/busybox'
-  image_size = '128M'
+  image_size = '256M'
 elif id == 'fedora' or id_like.contains('fedora')
   message('Using packages list for Fedora')
   packages_list = 'packages.fedora'
