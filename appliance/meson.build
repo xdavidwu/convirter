@@ -11,18 +11,22 @@ if id == 'arch' or id_like.contains('arch')
   message('Using packages list for Arch Linux')
   packages_list = 'packages.archlinux'
   busybox_path = '/bin/busybox'
+  image_size = '512M'
 elif id == 'debian' or id_like.contains('debian')
   message('Using packages list for Debian')
   packages_list = 'packages.debian'
   busybox_path = '/bin/busybox'
+  image_size = '128M'
 elif id == 'fedora' or id_like.contains('fedora')
   message('Using packages list for Fedora')
   packages_list = 'packages.fedora'
   busybox_path = '/sbin/busybox'
+  image_size = '128M'
 else
   warning('Using generic packages list for appliance')
   packages_list = 'packages.generic'
   busybox_path = '/bin/busybox'
+  image_size = '128M'
 endif
 
 packages = run_command(grep, '-v', '^#', '--', packages_list).stdout().strip().split('\n')
@@ -63,7 +67,7 @@ init_tar = custom_target('gen-init-tar',
 
 full_appliance = custom_target('supermin-build',
   output: 'appliance.d',
-  command: [supermin, '--build', '@OUTDIR@' / 'supermin.d', '-f', 'ext2', '--size', '512M', '--copy-kernel', '-o', '@OUTPUT@'],
+  command: [supermin, '--build', '@OUTDIR@' / 'supermin.d', '-f', 'ext2', '--size', image_size, '--copy-kernel', '-o', '@OUTPUT@'],
   env: {'LC_ALL': 'C'},
   build_by_default: true,
   depends: [supermin_appliance, init_tar])
