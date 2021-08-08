@@ -495,6 +495,10 @@ int main(int argc, char *argv[]) {
 	setup_init_config(&state, config);
 	cvirt_oci_config_close(config);
 
+	guestfs_umount_all(state.guestfs);
+	guestfs_shutdown(state.guestfs);
+	guestfs_close(state.guestfs);
+
 	struct cvirt_oci_blob *config_blob = cvirt_oci_blob_from_config(config);
 	struct cvirt_oci_blob *layer_blob = cvirt_oci_blob_from_layer(layer);
 	struct cvirt_oci_manifest *manifest = cvirt_oci_manifest_new();
@@ -516,9 +520,5 @@ int main(int argc, char *argv[]) {
 	cvirt_oci_blob_destory(config_blob);
 	cvirt_oci_config_destroy(config);
 	cvirt_oci_layer_destroy(layer);
-	guestfs_umount_all(state.guestfs);
-	guestfs_shutdown(state.guestfs);
-	guestfs_close(state.guestfs);
-
 	return 0;
 }
