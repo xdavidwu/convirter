@@ -14,6 +14,11 @@
 
 static const int bufsz = 4000 * 1024;
 
+#define C2V_DIR	"/.c2v"
+#define C2V_INIT	C2V_DIR "/init"
+#define C2V_BUSYBOX	C2V_DIR "/busybox"
+#define C2V_LAYERS	C2V_DIR "/layers"
+
 static int set_attr(guestfs_h *guestfs, const char *path,
 		struct archive_entry *entry, const struct stat *stat) {
 	int res = guestfs_lchown(guestfs, stat->st_uid, stat->st_gid, path);
@@ -84,7 +89,7 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 		char *abs_path = calloc(2 + strlen(path), sizeof(char));
 		const char *link;
 		abs_path[0] = '/';
-		strcat(abs_path, path);
+		strcpy(&abs_path[1], path);
 		switch (stat->st_mode & S_IFMT) {
 		case S_IFLNK:
 			res = guestfs_ln_sf(guestfs, archive_entry_symlink(entry), abs_path);
@@ -118,7 +123,7 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 				char *abs_target = calloc(2 + strlen(link),
 					sizeof(char));
 				abs_target[0] = '/';
-				strcat(abs_target, link);
+				strcpy(&abs_target[1], link);
 				res = guestfs_ln_f(guestfs, abs_target, abs_path);
 				free(abs_target);
 			} else {
@@ -140,12 +145,10 @@ next:
 	}
 	if (res == ARCHIVE_FATAL) {
 		fprintf(stderr, "fatal: %s\n", archive_error_string(archive));
+		return -archive_errno(archive);
 	}
 	return 0;
 }
-
-static const char c2v_init_path[] = "/.c2v/init";
-static const char c2v_dir_path[] = "/.c2v";
 
 static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
 		const char *string) {
@@ -178,17 +181,12 @@ static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
 	return 0;
 }
 
-#define C2V_BUSYBOX "/.c2v/busybox"
-
-/*
- * TODO: templating
- */
 static int generate_init_script(guestfs_h *guestfs,
 		struct cvirt_oci_r_config *config) {
-	guestfs_rm_rf(guestfs, c2v_init_path);
+	guestfs_rm_rf(guestfs, C2V_INIT);
 	const char pre_env[] =
 		C2V_BUSYBOX " umount -r /.old_root\n";
-	int res = guestfs_write_append(guestfs, c2v_init_path, pre_env,
+	int res = guestfs_write_append(guestfs, C2V_INIT, pre_env,
 		strlen(pre_env));
 	if (res < 0) {
 		return res;
@@ -197,19 +195,19 @@ static int generate_init_script(guestfs_h *guestfs,
 	int env_count = cvirt_oci_r_config_get_env_length(config);
 	for (int i = 0; i < env_count; i++) {
 		const char export_pre[] = "export '";
-		res = guestfs_write_append(guestfs, c2v_init_path,
+		res = guestfs_write_append(guestfs, C2V_INIT,
 			export_pre, strlen(export_pre));
 		if (res < 0) {
 			return res;
 		}
 		const char *env = cvirt_oci_r_config_get_env(config, i);
-		res = append_quote_escaped_string(guestfs, c2v_init_path, env);
+		res = append_quote_escaped_string(guestfs, C2V_INIT, env);
 		if (res < 0) {
 			return res;
 		}
 		const char export_post[] =
 			"'\n";
-		res = guestfs_write_append(guestfs, c2v_init_path,
+		res = guestfs_write_append(guestfs, C2V_INIT,
 			export_post, strlen(export_post));
 		if (res < 0) {
 			return res;
@@ -219,18 +217,18 @@ static int generate_init_script(guestfs_h *guestfs,
 	const char *workdir = cvirt_oci_r_config_get_working_dir(config);
 	if (workdir) {
 		const char workdir_pre[] = "\ncd '";
-		res = guestfs_write_append(guestfs, c2v_init_path,
+		res = guestfs_write_append(guestfs, C2V_INIT,
 			workdir_pre, strlen(workdir_pre));
 		if (res < 0) {
 			return res;
 		}
-		res = append_quote_escaped_string(guestfs, c2v_init_path, workdir);
+		res = append_quote_escaped_string(guestfs, C2V_INIT, workdir);
 		if (res < 0) {
 			return res;
 		}
 		const char workdir_post[] =
 			"'\n";
-		res = guestfs_write_append(guestfs, c2v_init_path,
+		res = guestfs_write_append(guestfs, C2V_INIT,
 			workdir_post, strlen(workdir_post));
 		if (res < 0) {
 			return res;
@@ -238,7 +236,7 @@ static int generate_init_script(guestfs_h *guestfs,
 	}
 
 	const char pre_cmd[] = "\nexec ";
-	res = guestfs_write_append(guestfs, c2v_init_path,
+	res = guestfs_write_append(guestfs, C2V_INIT,
 		pre_cmd, strlen(pre_cmd));
 	if (res < 0) {
 		return res;
@@ -248,14 +246,14 @@ static int generate_init_script(guestfs_h *guestfs,
 	const char *user = cvirt_oci_r_config_get_user(config);
 	if (user) {
 		const char user_pre[] = " /.c2v/setuidgid '";
-		res = guestfs_write_append(guestfs, c2v_init_path,
+		res = guestfs_write_append(guestfs, C2V_INIT,
 			user_pre, strlen(user_pre));
 		if (res < 0) {
 			return res;
 		}
-		res = append_quote_escaped_string(guestfs, c2v_init_path, user);
+		res = append_quote_escaped_string(guestfs, C2V_INIT, user);
 		const char user_post[] = "' ";
-		res = guestfs_write_append(guestfs, c2v_init_path,
+		res = guestfs_write_append(guestfs, C2V_INIT,
 			user_post, strlen(user_post));
 		if (res < 0) {
 			return res;
@@ -266,7 +264,7 @@ static int generate_init_script(guestfs_h *guestfs,
 		cmd_len = cvirt_oci_r_config_get_cmd_length(config);
 	if (!entrypoint_len && !cmd_len) {
 		const char default_cmd[] = "/sbin/init\n";
-		res = guestfs_write_append(guestfs, c2v_init_path,
+		res = guestfs_write_append(guestfs, C2V_INIT,
 			default_cmd, strlen(default_cmd));
 		if (res < 0) {
 			return res;
@@ -274,19 +272,19 @@ static int generate_init_script(guestfs_h *guestfs,
 	} else {
 		for (int i = 0; i < entrypoint_len; i++) {
 			const char pre[] = "'";
-			res = guestfs_write_append(guestfs, c2v_init_path,
+			res = guestfs_write_append(guestfs, C2V_INIT,
 				pre, strlen(pre));
 			if (res < 0) {
 				return res;
 			}
 			const char *part = cvirt_oci_r_config_get_entrypoint_part(config, i);
-			res = append_quote_escaped_string(guestfs, c2v_init_path, part);
+			res = append_quote_escaped_string(guestfs, C2V_INIT, part);
 			if (res < 0) {
 				return res;
 			}
 			const char post[] =
 				"' ";
-			res = guestfs_write_append(guestfs, c2v_init_path,
+			res = guestfs_write_append(guestfs, C2V_INIT,
 				post, strlen(post));
 			if (res < 0) {
 				return res;
@@ -294,19 +292,19 @@ static int generate_init_script(guestfs_h *guestfs,
 		}
 		for (int i = 0; i < cmd_len; i++) {
 			const char pre[] = "'";
-			res = guestfs_write_append(guestfs, c2v_init_path,
+			res = guestfs_write_append(guestfs, C2V_INIT,
 				pre, strlen(pre));
 			if (res < 0) {
 				return res;
 			}
 			const char *part = cvirt_oci_r_config_get_cmd_part(config, i);
-			res = append_quote_escaped_string(guestfs, c2v_init_path, part);
+			res = append_quote_escaped_string(guestfs, C2V_INIT, part);
 			if (res < 0) {
 				return res;
 			}
 			const char post[] =
 				"' ";
-			res = guestfs_write_append(guestfs, c2v_init_path,
+			res = guestfs_write_append(guestfs, C2V_INIT,
 				post, strlen(post));
 			if (res < 0) {
 				return res;
@@ -314,7 +312,7 @@ static int generate_init_script(guestfs_h *guestfs,
 		}
 	}
 
-	res = guestfs_chmod(guestfs, 0400, c2v_init_path);
+	res = guestfs_chmod(guestfs, 0400, C2V_INIT);
 	return 0;
 }
 
@@ -358,7 +356,12 @@ int main(int argc, char *argv[]) {
 	}
 	assert(guestfs_umask(guestfs, 0) >= 0);
 	
-	assert(guestfs_mkdir_p(guestfs, c2v_dir_path) >= 0);
+	assert(guestfs_mkdir_p(guestfs, C2V_LAYERS) >= 0);
+	res = guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/", C2V_LAYERS "/base", GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1);
+	if (res < 0) {
+		fprintf(stderr, "snapshot failed\n");
+		exit(EXIT_FAILURE);
+	}
 
 	struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(argv[1]);
 	const char *manifest_digest = cvirt_oci_r_index_get_native_manifest_digest(index);
@@ -372,6 +375,18 @@ int main(int argc, char *argv[]) {
 			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
 		struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
 		dump_layer(guestfs, archive);
+		char *snapshot_dest = calloc(strlen(layer_digest) + 14, sizeof(char));
+		if (!snapshot_dest) {
+			exit(EXIT_FAILURE);
+		}
+		strcpy(snapshot_dest, C2V_LAYERS "/");
+		strcat(snapshot_dest, layer_digest);
+		res = guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/", snapshot_dest, GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1);
+		if (res < 0) {
+			fprintf(stderr, "snapshot failed\n");
+			exit(EXIT_FAILURE);
+		}
+		free(snapshot_dest);
 		cvirt_oci_r_layer_destroy(layer);
 	}
 	struct cvirt_oci_r_config *config =
