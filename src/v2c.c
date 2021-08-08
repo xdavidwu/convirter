@@ -330,7 +330,7 @@ static int cleanup_systemd(struct v2c_state *state) {
 	return 0;
 }
 
-static int setup_systemd_config(struct cvirt_oci_config *config) {
+static int setup_init_config(struct v2c_state *state, struct cvirt_oci_config *config) {
 	int res = cvirt_oci_config_set_user(config, "0:0");
 	if (res < 0) {
 		return res;
@@ -343,7 +343,15 @@ static int setup_systemd_config(struct cvirt_oci_config *config) {
 	if (res < 0) {
 		return res;
 	}
-	return cvirt_oci_config_set_stop_signal(config, "SIGRTMIN+3");
+	char *link = guestfs_readlink(state->guestfs, "/sbin/init");
+	if (link) {
+		int l = strlen(link);
+		if (l >= 7 && !strncmp(&link[l - 7], "systemd", 7)) {
+			return cvirt_oci_config_set_stop_signal(config, "SIGRTMIN+3");
+		}
+		free(link);
+	}
+	return cvirt_oci_config_set_stop_signal(config, "SIGPWR");
 }
 
 int main(int argc, char *argv[]) {
@@ -484,7 +492,7 @@ int main(int argc, char *argv[]) {
 
 	struct cvirt_oci_config *config = cvirt_oci_config_new();
 	cvirt_oci_config_add_layer(config, layer);
-	setup_systemd_config(config);
+	setup_init_config(&state, config);
 	cvirt_oci_config_close(config);
 
 	struct cvirt_oci_blob *config_blob = cvirt_oci_blob_from_config(config);
