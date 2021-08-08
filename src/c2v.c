@@ -1,5 +1,6 @@
 #include <archive.h>
 #include <archive_entry.h>
+#include <assert.h>
 #include <convirter/oci-r/config.h>
 #include <convirter/oci-r/index.h>
 #include <convirter/oci-r/layer.h>
@@ -184,7 +185,6 @@ static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
  */
 static int generate_init_script(guestfs_h *guestfs,
 		struct cvirt_oci_r_config *config) {
-	guestfs_mkdir_p(guestfs, c2v_dir_path);
 	guestfs_rm_rf(guestfs, c2v_init_path);
 	const char pre_env[] =
 		C2V_BUSYBOX " umount -r /.old_root\n";
@@ -356,7 +356,9 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Failed mount\n");
 		exit(EXIT_FAILURE);
 	}
-	guestfs_umask(guestfs, 0);
+	assert(guestfs_umask(guestfs, 0) >= 0);
+	
+	assert(guestfs_mkdir_p(guestfs, c2v_dir_path) >= 0);
 
 	struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(argv[1]);
 	const char *manifest_digest = cvirt_oci_r_index_get_native_manifest_digest(index);
