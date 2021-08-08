@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -102,13 +103,12 @@ static int dump_file_content(struct v2c_state *state, const char *path, int64_t 
 	int64_t offset = 0;
 	size_t read = 0;
 	int res = 0;
-	while (size) {
+	while (offset != size) {
 		char *buf = guestfs_pread(state->guestfs, path,
 			size > bufsz ? bufsz : size, offset, &read);
 		if (!buf) {
 			return -errno;
 		}
-		size -= read;
 		offset += read;
 		res = archive_write_data(state->layer_archive, buf, read);
 		free(buf);
@@ -170,7 +170,6 @@ static int dump_to_archive(struct v2c_state *state, const char *path,
 	if ((stat->st_mode & S_IFMT) == S_IFLNK) {
 		char *link = guestfs_readlink(state->guestfs, path);
 		if (!link) {
-			free(link);
 			return -errno;
 		}
 		archive_entry_set_symlink(state->layer_entry, link);
@@ -216,15 +215,15 @@ static int dump_guestfs(struct v2c_state *state, const char *dir) {
 		return -errno;
 	}
 
-	int res = 0;
-	for (int i = 0; ls[i]; i++) {
+	int res = 0, i = 0;
+	for (; ls[i]; i++) {
 		if (!strncmp(ls[i], ".wh.", 4)) {
 			// no way to store names like whiteouts in OCI
 			continue;
 		}
 
 		char *full;
-		if (dir[1]) {
+		if (dir[1]) { // not /
 			full = calloc(strlen(dir) + strlen(ls[i]) + 2, sizeof(char));
 			if (!full) {
 				guestfs_free_statns_list(stats);
@@ -239,8 +238,8 @@ static int dump_guestfs(struct v2c_state *state, const char *dir) {
 				guestfs_free_statns_list(stats);
 				return -errno;
 			}
-			strcpy(full, "/");
-			strcat(full, ls[i]);
+			full[0] = '/';
+			strcpy(&full[1], ls[i]);
 		}
 		free(ls[i]);
 
@@ -260,6 +259,9 @@ static int dump_guestfs(struct v2c_state *state, const char *dir) {
 		free(full);
 	}
 cleanup:
+	for (; ls[i]; i++) {
+		free(ls[i]);
+	}
 	guestfs_free_statns_list(stats);
 	free(ls);
 	return res;
@@ -298,46 +300,29 @@ cleanup:
 	return res;
 }
 
-static int cleanup_systemd(struct v2c_state *state) {
+const struct {
+	enum {
+		SYSTEMD_MASK,
+		SYSTEMD_DISABLE
+	} action;
+	char *unit;
+} systemd_cleanups[] = {
 	/* TODO: organize by category (e.g. network) and make them optional */
-	// Debian ifup
-	{
-		char *const cmd[] = {
-			"systemctl",
-			"disable",
-			"networking.service",
-			NULL,
-		};
-		free(guestfs_command(state->guestfs, cmd));
-	}
-	// Ubuntu multipathd
-	{
-		char *const cmd[] = {
-			"systemctl",
-			"disable",
-			"multipathd.service",
-			NULL,
-		};
-		free(guestfs_command(state->guestfs, cmd));
-	}
-	// Ubuntu systemd-rfkill (socket)
-	{
-		char *const cmd[] = {
-			"systemctl",
-			"mask",
-			"systemd-rfkill.socket",
-			NULL,
-		};
-		free(guestfs_command(state->guestfs, cmd));
-	}
-	// CentOS auditd
-	// Only one instance should run, leave it to host
+	{SYSTEMD_DISABLE, "networking.service"}, // ifup
+	{SYSTEMD_DISABLE, "multipathd.service"}, // multipathd
+	{SYSTEMD_MASK, "systemd-rfkill.socket"}, // systemd-rfkill
+	// auditd: Only one instance should run, leave it to host
 	// (https://access.redhat.com/articles/4494341)
-	{
+	{SYSTEMD_DISABLE, "auditd.service"},
+	{0},
+};
+
+static int cleanup_systemd(struct v2c_state *state) {
+	for (int i = 0; systemd_cleanups[i].unit; i++) {
 		char *const cmd[] = {
 			"systemctl",
-			"disable",
-			"auditd.service",
+			systemd_cleanups[i].action == SYSTEMD_MASK ? "mask" : "disable",
+			systemd_cleanups[i].unit,
 			NULL,
 		};
 		free(guestfs_command(state->guestfs, cmd));
@@ -403,16 +388,21 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "No root found.\n");
 		exit(EXIT_FAILURE);
 	}
-	for (int i = 0; roots[i]; i++) {
+	int i = 0;
+	for (; roots[i]; i++) {
 		char *type = guestfs_inspect_get_type(state.guestfs, roots[i]);
 		if (!type) {
 			free(roots[i]);
 			continue;
 		}
 		if (!strcmp(type, "linux")) {
-			target_root = roots[i];
+			target_root = strdup(roots[i]);
+			assert(target_root);
 			break;
 		}
+		free(roots[i]);
+	}
+	for (; roots[i]; i++) {
 		free(roots[i]);
 	}
 	free(roots);
