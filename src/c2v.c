@@ -95,7 +95,7 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 			res = guestfs_ln_sf(guestfs, archive_entry_symlink(entry), abs_path);
 			break;
 		case S_IFREG:
-			guestfs_rm_f(guestfs, abs_path);
+			assert(guestfs_rm_f(guestfs, abs_path) >= 0);
 			res = guestfs_mknod(guestfs, stat->st_mode,
 				major(stat->st_rdev), minor(stat->st_rdev),
 				abs_path);
@@ -111,7 +111,7 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 		case S_IFBLK:
 		case S_IFCHR:
 		case S_IFIFO:
-			guestfs_rm_f(guestfs, abs_path);
+			assert(guestfs_rm_f(guestfs, abs_path) >= 0);
 			res = guestfs_mknod(guestfs, stat->st_mode,
 				major(stat->st_rdev), minor(stat->st_rdev),
 				abs_path);
