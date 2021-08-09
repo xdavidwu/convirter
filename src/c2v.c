@@ -339,29 +339,29 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Failed launching guestfs\n");
 		exit(EXIT_FAILURE);
 	}
-	// TODO: check avail
-	char *btrfs_devices[] = {
+
+	char *const required_features[] = {
+		"btrfs",
+		NULL,
+	};
+	if (!guestfs_feature_available(guestfs, required_features)) {
+		fprintf(stderr, "Required libguestfs feature \"btrfs\" not available\n");
+		exit(EXIT_FAILURE);
+	}
+
+	char *const btrfs_devices[] = {
 		"/dev/sda",
 		NULL,
 	};
-	res = guestfs_mkfs_btrfs(guestfs, btrfs_devices, -1);
-	if (res < 0) {
-		fprintf(stderr, "Failed mkfs\n");
-		exit(EXIT_FAILURE);
-	}
-	res = guestfs_mount(guestfs, "/dev/sda", "/");
-	if (res < 0) {
-		fprintf(stderr, "Failed mount\n");
-		exit(EXIT_FAILURE);
-	}
+	assert(guestfs_mkfs_btrfs(guestfs, btrfs_devices, -1) >= 0);
+	assert(guestfs_mount(guestfs, "/dev/sda", "/") >= 0);
+
 	assert(guestfs_umask(guestfs, 0) >= 0);
 	
 	assert(guestfs_mkdir_p(guestfs, C2V_LAYERS) >= 0);
-	res = guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/", C2V_LAYERS "/base", GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1);
-	if (res < 0) {
-		fprintf(stderr, "snapshot failed\n");
-		exit(EXIT_FAILURE);
-	}
+	assert(guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/",
+		C2V_LAYERS "/base",
+		GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
 
 	struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(argv[1]);
 	const char *manifest_digest = cvirt_oci_r_index_get_native_manifest_digest(index);
@@ -381,11 +381,9 @@ int main(int argc, char *argv[]) {
 		}
 		strcpy(snapshot_dest, C2V_LAYERS "/");
 		strcat(snapshot_dest, layer_digest);
-		res = guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/", snapshot_dest, GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1);
-		if (res < 0) {
-			fprintf(stderr, "snapshot failed\n");
-			exit(EXIT_FAILURE);
-		}
+		assert(guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/",
+			snapshot_dest,
+			GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
 		free(snapshot_dest);
 		cvirt_oci_r_layer_destroy(layer);
 	}
