@@ -478,7 +478,8 @@ int main(int argc, char *argv[]) {
 
 	assert(guestfs_umask(guestfs, 0) >= 0);
 	
-	assert(guestfs_mkdir_p(guestfs, C2V_LAYERS) >= 0);
+	assert(guestfs_mkdir_mode(guestfs, C2V_DIR, 0500) >= 0);
+	assert(guestfs_mkdir_mode(guestfs, C2V_LAYERS, 0500) >= 0);
 	assert(guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/",
 		C2V_LAYERS "/base",
 		GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
