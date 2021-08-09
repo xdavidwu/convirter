@@ -242,7 +242,6 @@ static int generate_init_script(guestfs_h *guestfs,
 		return res;
 	}
 
-	// TODO: setuidgid does not support supp. groups
 	const char *user = cvirt_oci_r_config_get_user(config);
 	if (user) {
 		const char user_pre[] = " /.c2v/setuidgid '";
