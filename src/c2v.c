@@ -6,6 +6,7 @@
 #include <convirter/oci-r/layer.h>
 #include <convirter/oci-r/manifest.h>
 #include <guestfs.h>
+#include <libgen.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,8 +70,103 @@ static int dump_file(guestfs_h *guestfs, struct archive *archive,
 	return res;
 }
 
+static int apply_whiteouts(guestfs_h *guestfs, struct archive *archive) {
+	struct archive_entry *entry;
+	int res = archive_read_next_header(archive, &entry);
+	while (res != ARCHIVE_EOF && res != ARCHIVE_FATAL) {
+		char *basename_dup = NULL, *dirname_dup = NULL;
+		if (res == ARCHIVE_WARN) {
+			fprintf(stderr, "warning: %s: %s\n",
+				archive_entry_pathname(entry),
+				archive_error_string(archive));
+		} else if (res == ARCHIVE_RETRY) {
+			fprintf(stderr, "warning: %s: %s, retry\n",
+				archive_entry_pathname(entry),
+				archive_error_string(archive));
+			goto next;
+		}
+		const char *path = archive_entry_pathname(entry);
+		basename_dup = strdup(path);
+		assert(basename_dup);
+		const char *name = basename(basename_dup);
+		assert(name);
+
+		if (strncmp(name, ".wh.", 4)) {
+			// not a whiteout
+			goto next;
+		}
+
+		const char *dir = dirname(dirname_dup);
+		assert(dir);
+
+		if (!strcmp(name, ".wh..wh..opq")) {
+			// opaque whiteout
+			char *abs_path = calloc(strlen(dir) + 2, sizeof(char));
+			assert(abs_path);
+			abs_path[0] = '/';
+			if (!(dir[0] == '.' && !dir[1])) { // not just .
+				strcpy(&abs_path[1], dir);
+			}
+
+			int i = 0;
+			char **ls = guestfs_ls(guestfs, abs_path);
+			if (!ls) {
+				goto opq_cleanup;
+			}
+			for (; ls[i]; i++) {
+				char *full;
+				if (abs_path[1]) { // not /
+					full = calloc(strlen(abs_path) + strlen(ls[i]) + 2, sizeof(char));
+					assert(full);
+					strcpy(full, abs_path);
+					strcat(full, "/");
+					strcat(full, ls[i]);
+				} else {
+					full = calloc(strlen(ls[i]) + 2, sizeof(char));
+					assert(full);
+					full[0] = '/';
+					strcpy(&full[1], ls[i]);
+				}
+				free(ls[i]);
+				int res = guestfs_rm_rf(guestfs, full);
+				free(full);
+				if (res < 0) {
+					return res;
+				}
+			}
+
+		opq_cleanup:
+			free(ls);
+			free(abs_path);
+			goto next;
+		}
+
+		// explicit whiteout
+		int dir_len = strlen(dir);
+		char *full = calloc(1 + dir_len + 1 + strlen(name) - 4 + 1, sizeof(char));
+		assert(full);
+		full[0] = '/';
+		strcpy(&full[1], dir);
+		full[dir_len + 1] = '/';
+		strcpy(&full[dir_len + 2], &name[4]);
+		res = guestfs_rm_rf(guestfs, full);
+		free(full);
+		if (res < 0) {
+			return res;
+		}
+next:
+		free(basename_dup);
+		free(dirname_dup);
+		res = archive_read_next_header(archive, &entry);
+	}
+	if (res == ARCHIVE_FATAL) {
+		fprintf(stderr, "fatal: %s\n", archive_error_string(archive));
+		return -archive_errno(archive);
+	}
+	return 0;
+}
+
 static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
-	// TODO: whiteouts
 	struct archive_entry *entry;
 	int res = archive_read_next_header(archive, &entry);
 	while (res != ARCHIVE_EOF && res != ARCHIVE_FATAL) {
@@ -84,10 +180,22 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 				archive_error_string(archive));
 			goto next;
 		}
-		const struct stat *stat = archive_entry_stat(entry);
 		const char *path = archive_entry_pathname(entry);
-		char *abs_path = calloc(2 + strlen(path), sizeof(char));
+		char *basename_dup = strdup(path);
+		assert(basename_dup);
+		const char *name = basename(basename_dup);
+		assert(name);
+		if (!strncmp(name, ".wh.", 4)) {
+			// whiteouts
+			free(basename_dup);
+			goto next;
+		}
+		free(basename_dup);
+
+		const struct stat *stat = archive_entry_stat(entry);
 		const char *link;
+		char *abs_path = calloc(2 + strlen(path), sizeof(char));
+		assert(abs_path);
 		abs_path[0] = '/';
 		strcpy(&abs_path[1], path);
 
@@ -382,11 +490,23 @@ int main(int argc, char *argv[]) {
 	int len = cvirt_oci_r_manifest_get_layers_length(manifest);
 	for (int i = 0; i < len; i++) {
 		const char *layer_digest = cvirt_oci_r_manifest_get_layer_digest(manifest, i);
+
+		// first pass: whiteouts
 		struct cvirt_oci_r_layer *layer =
 			cvirt_oci_r_layer_from_archive_blob(argv[1], layer_digest,
 			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
 		struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
+		apply_whiteouts(guestfs, archive);
+		cvirt_oci_r_layer_destroy(layer);
+
+		// second pass: data
+		layer = cvirt_oci_r_layer_from_archive_blob(argv[1], layer_digest,
+			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
+		archive = cvirt_oci_r_layer_get_libarchive(layer);
 		dump_layer(guestfs, archive);
+		cvirt_oci_r_layer_destroy(layer);
+
+		// snapshot after each layer
 		char *snapshot_dest = calloc(strlen(layer_digest) + 14, sizeof(char));
 		if (!snapshot_dest) {
 			exit(EXIT_FAILURE);
@@ -397,7 +517,6 @@ int main(int argc, char *argv[]) {
 			snapshot_dest,
 			GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
 		free(snapshot_dest);
-		cvirt_oci_r_layer_destroy(layer);
 	}
 	struct cvirt_oci_r_config *config =
 		cvirt_oci_r_config_from_archive_blob(argv[1], config_digest);
