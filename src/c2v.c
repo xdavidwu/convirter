@@ -86,6 +86,9 @@ static int apply_whiteouts(guestfs_h *guestfs, struct archive *archive) {
 			goto next;
 		}
 		const char *path = archive_entry_pathname(entry);
+		if (!strncmp(path, ".c2v/", 4) || !strcmp(path, ".wh..c2v")) {
+			goto next;
+		}
 		basename_dup = strdup(path);
 		assert(basename_dup);
 		const char *name = basename(basename_dup);
@@ -122,6 +125,10 @@ static int apply_whiteouts(guestfs_h *guestfs, struct archive *archive) {
 					strcat(full, "/");
 					strcat(full, ls[i]);
 				} else {
+					if (strcmp(ls[i], ".c2v")) {
+						free(ls[i]);
+						continue;
+					}
 					full = calloc(strlen(ls[i]) + 2, sizeof(char));
 					assert(full);
 					full[0] = '/';
@@ -181,6 +188,10 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 			goto next;
 		}
 		const char *path = archive_entry_pathname(entry);
+		if (!strcmp(path, ".c2v")) {
+			fprintf(stderr, "warning: layer: skipping our special path\n");
+			goto next;
+		}
 		char *basename_dup = strdup(path);
 		assert(basename_dup);
 		const char *name = basename(basename_dup);
@@ -304,7 +315,6 @@ static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
 
 static int generate_init_script(guestfs_h *guestfs,
 		struct cvirt_oci_r_config *config) {
-	guestfs_rm_rf(guestfs, C2V_INIT);
 	const char pre_env[] =
 		C2V_BUSYBOX " umount -r /.old_root\n";
 	int res = guestfs_write_append(guestfs, C2V_INIT, pre_env,
@@ -509,9 +519,7 @@ int main(int argc, char *argv[]) {
 
 		// snapshot after each layer
 		char *snapshot_dest = calloc(strlen(layer_digest) + 14, sizeof(char));
-		if (!snapshot_dest) {
-			exit(EXIT_FAILURE);
-		}
+		assert(snapshot_dest);
 		strcpy(snapshot_dest, C2V_LAYERS "/");
 		strcat(snapshot_dest, layer_digest);
 		assert(guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/",
