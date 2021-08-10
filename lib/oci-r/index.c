@@ -1,6 +1,7 @@
 #include "archive-utils.h"
 #include "convirter/oci-r/index.h"
 #include "oci-r/index.h"
+#include "goarch.h"
 
 #include <json_object.h>
 #include <stdlib.h>
@@ -49,8 +50,8 @@ const char *cvirt_oci_r_index_get_native_manifest_digest(
 		if (!type || !digest) {
 			goto err;
 		}
-		if (strcmp("application/vnd.oci.image.manifest.v1+json",
-				json_object_get_string(type))) {
+		if (strcmp(json_object_get_string(type),
+				"application/vnd.oci.image.manifest.v1+json")) {
 			continue;
 		}
 		struct json_object *constraints = json_object_object_get(
@@ -64,8 +65,8 @@ const char *cvirt_oci_r_index_get_native_manifest_digest(
 		if (!architecture || !os) {
 			goto err;
 		}
-		if (strcmp("amd64", json_object_get_string(architecture)) ||
-				strcmp("linux", json_object_get_string(os))) {
+		if (strcmp(json_object_get_string(architecture), NATIVE_GOARCH) ||
+				strcmp(json_object_get_string(os), "linux")) {
 			continue;
 		}
 		return json_object_get_string(digest);

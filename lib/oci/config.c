@@ -1,6 +1,7 @@
 #include "convirter/oci/config.h"
 #include "oci/config.h"
 #include "oci/layer.h"
+#include "goarch.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -18,8 +19,7 @@ struct cvirt_oci_config *cvirt_oci_config_new() {
 		goto err;
 	}
 
-	// TODO
-	struct json_object *arch = json_object_new_string("amd64");
+	struct json_object *arch = json_object_new_string(NATIVE_GOARCH);
 	if (!arch) {
 		goto err;
 	}
