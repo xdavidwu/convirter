@@ -10,7 +10,7 @@ id = run_command(sh, '-c', '. /etc/os-release && printf "%s" "$ID"').stdout()
 if id == 'arch' or id_like.contains('arch')
   message('Using packages list for Arch Linux')
   packages_list = 'packages.archlinux'
-  image_size = '512M'
+  image_size = '128M'
 elif id == 'debian' or id_like.contains('debian')
   message('Using packages list for Debian')
   packages_list = 'packages.debian'
