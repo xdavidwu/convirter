@@ -1,3 +1,2 @@
-busybox
 # need kmod for compressed kernel modules
 kmod

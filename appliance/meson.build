@@ -10,23 +10,17 @@ id = run_command(sh, '-c', '. /etc/os-release && printf "%s" "$ID"').stdout()
 if id == 'arch' or id_like.contains('arch')
   message('Using packages list for Arch Linux')
   packages_list = 'packages.archlinux'
-  busybox_path = '/bin/busybox'
   image_size = '512M'
 elif id == 'debian' or id_like.contains('debian')
   message('Using packages list for Debian')
   packages_list = 'packages.debian'
-  busybox_path = '/bin/busybox'
   image_size = '512M'
 elif id == 'fedora' or id_like.contains('fedora')
   message('Using packages list for Fedora')
   packages_list = 'packages.fedora'
-  busybox_path = '/sbin/busybox'
   image_size = '128M'
 else
-  warning('Using generic packages list for appliance')
-  packages_list = 'packages.generic'
-  busybox_path = '/bin/busybox'
-  image_size = '128M'
+  error('Unsupported distribution for appliance')
 endif
 
 packages = run_command(grep, '-v', '^#', '--', packages_list).stdout().strip().split('\n')
@@ -36,33 +30,36 @@ supermin_appliance = custom_target('supermin-prepare',
   command: [supermin, '--prepare', packages, '-o', '@OUTPUT@'],
   env: {'LC_ALL': 'C'})
 
-init = custom_target('generate-init',
-  input: 'init.in',
+init = custom_target('copy-init',
+  input: 'init',
   output: 'init',
-  command: [sed, 's|@BUSYBOX_PATH@|' + busybox_path + '|g', '@INPUT@'],
-  capture: true)
+  command: [cp, '@INPUT@', '@OUTPUT@'])
 
-udhcpc_script = custom_target('generate-udhcpc.script',
-  input: 'udhcpc.script.in',
+udhcpc_script = custom_target('copy-udhcpc-script',
+  input: 'udhcpc.script',
   output: 'udhcpc.script',
-  command: [sed, 's|@BUSYBOX_PATH@|' + busybox_path + '|g', '@INPUT@'],
-  capture: true)
+  command: [cp, '@INPUT@', '@OUTPUT@'])
 
 setuidgid = custom_target('copy-setuidgid',
   input: 'setuidgid',
   output: 'setuidgid',
   command: [cp, '@INPUT@', '@OUTPUT@'])
 
+busybox = custom_target('copy-busybox',
+  input: 'busybox',
+  output: 'busybox',
+  command: [cp, '@INPUT@', '@OUTPUT@'])
+
 # custom_target does not work with output under directories
 init_tar = custom_target('gen-init-tar',
-  input: [init, udhcpc_script, setuidgid],
+  input: [init, udhcpc_script, setuidgid, busybox],
   output: 'init.tar.gz',
   command: [
     tar,
     '-zcf', '@OUTDIR@' / 'supermin.d' / 'init.tar.gz',
     '-C', '@OUTDIR@',
     '--numeric-owner', '--owner=0', '--group=0', '--mode=500',
-    'init', 'udhcpc.script', 'setuidgid'],
+    'init', 'udhcpc.script', 'setuidgid', 'busybox'],
   depends: [supermin_appliance])
 
 full_appliance = custom_target('supermin-build',

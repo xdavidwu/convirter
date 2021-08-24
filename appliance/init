@@ -1,14 +1,12 @@
-#!@BUSYBOX_PATH@ ash
+#!/busybox ash
 
 set -e
 
-BUSYBOX=$(@BUSYBOX_PATH@ realpath @BUSYBOX_PATH@)
+alias busybox="/busybox"
 
-alias busybox="$BUSYBOX"
+MODPROBE_NON_BUSYBOX=$(command -v modprobe || true)
 
-MODPROBE_NON_BUSYBOX=$(busybox which modprobe || true)
-
-[ -n "$MODPROBE_NON_BUSYBOX" ] && alias modprobe="$MODPROBE_NON_BUSYBOX" || alias modprobe="$BUSYBOX modprobe"
+[ -n "$MODPROBE_NON_BUSYBOX" ] && alias modprobe="$MODPROBE_NON_BUSYBOX" || alias modprobe="/busybox modprobe"
 
 busybox mkdir -p /proc /sys /dev /tmp
 busybox mount -t proc proc /proc
@@ -45,8 +43,8 @@ busybox mount -o bind "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
 busybox mount -o remount,bind,ro,nodev,noexec "$MODULES_PATH" /mnt/merged"$MODULES_PATH"
 
 busybox touch /mnt/merged/.c2v/busybox
-busybox mount -o bind "$BUSYBOX" /mnt/merged/.c2v/busybox
-busybox mount -o remount,bind,ro "$BUSYBOX" /mnt/merged/.c2v/busybox
+busybox mount -o bind /busybox /mnt/merged/.c2v/busybox
+busybox mount -o remount,bind,ro /busybox /mnt/merged/.c2v/busybox
 
 busybox touch /mnt/merged/.c2v/setuidgid
 busybox mount -o bind /setuidgid /mnt/merged/.c2v/setuidgid

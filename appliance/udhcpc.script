@@ -1,9 +1,7 @@
-#!@BUSYBOX_PATH@ ash
+#!/busybox ash
 # udhcpc script edited by Tim Riker <Tim@Rikers.org>
 
-BUSYBOX=$(@BUSYBOX_PATH@ realpath @BUSYBOX_PATH@)
-
-alias busybox="$BUSYBOX"
+alias busybox="/busybox"
 
 RESOLV_CONF="/etc/resolv.conf"
 
