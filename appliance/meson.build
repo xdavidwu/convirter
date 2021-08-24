@@ -50,16 +50,21 @@ busybox = custom_target('copy-busybox',
   output: 'busybox',
   command: [cp, '@INPUT@', '@OUTPUT@'])
 
+kmod = custom_target('copy-kmod',
+  input: 'kmod',
+  output: 'modprobe',
+  command: [cp, '@INPUT@', '@OUTPUT@'])
+
 # custom_target does not work with output under directories
 init_tar = custom_target('gen-init-tar',
-  input: [init, udhcpc_script, setuidgid, busybox],
+  input: [init, udhcpc_script, setuidgid, busybox, kmod],
   output: 'init.tar.gz',
   command: [
     tar,
     '-zcf', '@OUTDIR@' / 'supermin.d' / 'init.tar.gz',
     '-C', '@OUTDIR@',
     '--numeric-owner', '--owner=0', '--group=0', '--mode=500',
-    'init', 'udhcpc.script', 'setuidgid', 'busybox'],
+    'init', 'udhcpc.script', 'setuidgid', 'busybox', 'modprobe'],
   depends: [supermin_appliance])
 
 full_appliance = custom_target('supermin-build',

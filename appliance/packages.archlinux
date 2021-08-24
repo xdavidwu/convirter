@@ -1,2 +1,2 @@
-# need kmod for compressed kernel modules
-kmod
+# workaround for empty package/config list for supermin
+filesystem
