@@ -1,0 +1,62 @@
+#!/busybox ash
+
+set -e
+
+alias busybox="/busybox"
+alias modprobe="/modprobe"
+
+busybox mkdir -p /proc /sys /dev /tmp
+busybox mount -t proc proc /proc
+busybox mount -t sysfs sys /sys
+busybox mount -t devtmpfs dev /dev
+busybox mount -t tmpfs tmpfs /tmp
+
+busybox find /sys/devices -name modalias -type f -print0 | busybox xargs -0 /busybox sort -u | busybox xargs /modprobe -ab 2>/dev/null || true
+busybox mkdir -p /etc
+
+HOSTNAME=$(busybox head -c 6 /dev/urandom | busybox hexdump -e '6/1 "%02x"')
+echo "$HOSTNAME" > /etc/hostname
+busybox hostname "$HOSTNAME"
+
+#modprobe e1000 || true
+busybox ip l set eth0 up
+modprobe af_packet || true
+busybox udhcpc -fqs /udhcpc.script
+busybox ash
+modprobe btrfs || true
+busybox mkdir -p /mnt/lower /tmp/upper /tmp/work /mnt/merged
+busybox mount /dev/sdb /mnt/lower
+modprobe overlay || true
+busybox mount -t overlay -olowerdir=/mnt/lower,upperdir=/tmp/upper,workdir=/tmp/work overlay /mnt/merged
+
+busybox mkdir -p /mnt/merged/dev /mnt/merged/sys /mnt/merged/proc
+busybox mount -o move /dev /mnt/merged/dev
+busybox mount -o move /sys /mnt/merged/sys
+busybox mount -o move /proc /mnt/merged/proc
+
+modprobe squashfs || true
+MODULES_PATH="/lib/modules/$(busybox uname -r)"
+busybox mkdir -p /mnt/merged/.old_root /mnt/merged"$MODULES_PATH"
+busybox mount -t squashfs /mnt/merged/dev/sda /mnt/merged"$MODULES_PATH"
+
+busybox touch /mnt/merged/.c2v/busybox
+# See mount(8)
+busybox mount -o bind /busybox /mnt/merged/.c2v/busybox
+busybox mount -o remount,bind,ro /busybox /mnt/merged/.c2v/busybox
+
+busybox touch /mnt/merged/.c2v/setuidgid
+busybox mount -o bind /setuidgid /mnt/merged/.c2v/setuidgid
+busybox mount -o remount,bind,ro /setuidgid /mnt/merged/.c2v/setuidgid
+
+busybox mkdir -p /mnt/merged/etc
+busybox touch /mnt/merged/etc/resolv.conf
+busybox mount -o bind /etc/resolv.conf /mnt/merged/etc/resolv.conf
+busybox mount -o remount,bind,ro /etc/resolv.conf /mnt/merged/etc/resolv.conf
+busybox touch /mnt/merged/etc/hostname
+busybox mount -o bind /etc/hostname /mnt/merged/etc/hostname
+busybox mount -o remount,bind,ro /etc/hostname /mnt/merged/etc/hostname
+
+busybox umount /mnt/lower
+busybox umount /tmp
+
+exec /busybox switch_root /mnt/merged/ /.c2v/busybox ash /.c2v/init
