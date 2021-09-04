@@ -24,6 +24,7 @@ endif
 
 subdir('src')
 subdir('tools')
+subdir('initramfs')
 
 if get_option('e2e_tests')
   subdir('tests')
