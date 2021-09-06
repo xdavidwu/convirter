@@ -51,17 +51,26 @@ while getopts d:o:s:k:b:nh NAME; do
 	esac
 done
 
+KERNEL_IMAGE=
+
+find_vmlinuz() {
+	for i in "/boot/vmlinuz-$KERNEL_VERSION" "/lib/modules/$KERNEL_VERSION/vmlinuz"; do
+		[ -f "$i" ] && KERNEL_IMAGE="$i" && return
+	done
+	echo "Failed to find kernel image for $KERNEL_VERSION" >&2 && exit 1
+}
+
 [ -z "$KERNEL_VERSION" ] && KERNEL_VERSION="$(ls -1 /lib/modules | head -n 1)"
 
 [ -z "$KERNEL_VERSION" ] && echo "Failed to detect any installed kernels" && exit 1
 
 [ ! -d "/lib/modules/$KERNEL_VERSION" ] && echo "Failed to find modules for $KERNEL_VERSION" >&2 && exit 1
 
-[ "$DO_COPY_KERNEL" = y -a ! -f "/lib/modules/$KERNEL_VERSION/vmlinuz" ] && echo "Failed to find kernel image for $KERNEL_VERSION" >&2 && exit 1
+[ "$DO_COPY_KERNEL" = y ] && find_vmlinuz
 
 cpio -oLHnewc -D"$DATA_PATH" -O"$OUTPUT" -R0:0 <"$DATA_PATH"/files.list
 (echo lib/ && echo lib/modules && cd / && find "lib/modules/$KERNEL_VERSION") | cpio -oLAHnewc -D/ -O"$OUTPUT"
 gzip -f "$OUTPUT"
 rm -f "$IMAGE_OUTPUT"
 mksquashfs "/lib/modules/$KERNEL_VERSION" "$IMAGE_OUTPUT"
-[ "$DO_COPY_KERNEL" = y ] && cp "/lib/modules/$KERNEL_VERSION/vmlinuz" "$COPY_KERNEL"
+[ "$DO_COPY_KERNEL" = y ] && cp "$KERNEL_IMAGE" "$COPY_KERNEL"
