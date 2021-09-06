@@ -1,4 +1,4 @@
-option('build_appliance', type: 'feature', value: 'false', description:
+option('build_appliance', type: 'boolean', value: false, description:
   'Build alternative supermin-appliance-based environment for booting VMs from c2v')
 option('e2e_tests', type: 'boolean', value: false, description:
   'Enable meson test for e2e tests')
