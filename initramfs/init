@@ -5,7 +5,7 @@ set -e
 alias busybox="/busybox"
 alias modprobe="/modprobe"
 
-busybox mkdir -p /proc /sys /dev /tmp
+busybox mkdir -p /proc /sys /dev /tmp /etc
 busybox mount -t proc proc /proc
 # now busybox standalone mode should work
 mount -t sysfs sys /sys
@@ -13,25 +13,29 @@ mount -t devtmpfs dev /dev
 mount -t tmpfs tmpfs /tmp
 
 find /sys/devices -name modalias -type f -print0 | xargs -0 /busybox sort -u | xargs /modprobe -ab 2>/dev/null || true
-mkdir -p /etc
+
+modprobe squashfs || true
+MODULES_PATH="/lib/modules/$(busybox uname -r)"
+mkdir -p /mnt/modules"$MODULES_PATH"
+mount -t squashfs /dev/sda /mnt/modules"$MODULES_PATH"
+
+find /sys/devices -name modalias -type f -print0 | xargs -0 /busybox sort -u | xargs /modprobe -d /mnt/modules -ab 2>/dev/null || true
+
+alias modprobe="/modprobe -d /mnt/modules"
 
 HOSTNAME=$(head -c 6 /dev/urandom | hexdump -e '6/1 "%02x"')
 echo "$HOSTNAME" > /etc/hostname
 hostname "$HOSTNAME"
 
-ip l set eth0 up
-modprobe af_packet || true
-udhcpc -fqs /udhcpc.script
 modprobe btrfs || true
 mkdir -p /mnt/lower /tmp/upper /tmp/work /mnt/merged
 mount /dev/sdb /mnt/lower
 modprobe overlay || true
 mount -t overlay -olowerdir=/mnt/lower,upperdir=/tmp/upper,workdir=/tmp/work overlay /mnt/merged
 
-modprobe squashfs || true
-MODULES_PATH="/lib/modules/$(busybox uname -r)"
-mkdir -p /mnt/merged"$MODULES_PATH"
-mount -t squashfs /dev/sda /mnt/merged"$MODULES_PATH"
+ip l set eth0 up
+modprobe af_packet || true
+udhcpc -fqs /udhcpc.script
 
 touch /mnt/merged/.c2v/busybox
 # See mount(8)
@@ -53,7 +57,8 @@ mount -o remount,bind,ro /etc/hostname /mnt/merged/etc/hostname
 umount /mnt/lower
 umount /tmp
 
-mkdir -p /mnt/merged/dev /mnt/merged/sys /mnt/merged/proc
+mkdir -p /mnt/merged/dev /mnt/merged/sys /mnt/merged/proc /mnt/merged"$MODULES_PATH"
+mount -o move /mnt/modules"$MODULES_PATH" /mnt/merged"$MODULES_PATH"
 mount -o move /dev /mnt/merged/dev
 mount -o move /sys /mnt/merged/sys
 mount -o move /proc /mnt/merged/proc
