@@ -8,12 +8,14 @@ if get_option('e2e_tests')
   test('c2v converts hello-world',
     c2v,
     args: [hello_world_oci, 'hello-world.qcow2'],
-    timeout: 300)
+    timeout: 300
+  )
 endif
 
 sh = find_program('sh')
 
 test('c2v-mkboot',
   sh,
-  args: [c2v_mkboot.full_path(), '-d', meson.source_root() / 'initramfs']
-  )
+  args: [c2v_mkboot.full_path(), '-d', meson.source_root() / 'initramfs'],
+  timeout: 300
+)
