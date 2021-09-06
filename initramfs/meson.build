@@ -2,7 +2,7 @@ sed = find_program('sed')
 
 initramfs_data_path = get_option('datadir') / meson.project_name() / 'initramfs'
 
-custom_target('c2v-mkboot',
+c2v_mkboot = custom_target('c2v-mkboot',
   build_by_default: true,
   input: 'c2v-mkboot.sh',
   command: [sed, 's|%CONVIRTER_DATA%|' + get_option('prefix') / initramfs_data_path + '|', '@INPUT@'],
