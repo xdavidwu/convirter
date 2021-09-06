@@ -60,6 +60,22 @@ find_vmlinuz() {
 	echo "Failed to find kernel image for $KERNEL_VERSION" >&2 && exit 1
 }
 
+module_files_for_initramfs() {
+	echo lib/
+	echo lib/modules
+	echo "lib/modules/$KERNEL_VERSION"
+	cd /
+	# modules dep, alias ...etc
+	find "lib/modules/$KERNEL_VERSION" -maxdepth 1 -name 'modules.*'
+	# dkms
+	[ -d "lib/modules/$KERNEL_VERSION/updates" ] && find "lib/modules/$KERNEL_VERSION/updates"
+	echo "lib/modules/$KERNEL_VERSION/kernel"
+	for sub in arch block crypto drivers fs kernel lib; do
+		[ -d "lib/modules/$KERNEL_VERSION/kernel/$sub" ] && find "lib/modules/$KERNEL_VERSION/kernel/$sub"
+	done
+	cd "$OLDPWD"
+}
+
 [ -z "$KERNEL_VERSION" ] && KERNEL_VERSION="$(ls -1 /lib/modules | head -n 1)"
 
 [ -z "$KERNEL_VERSION" ] && echo "Failed to detect any installed kernels" && exit 1
@@ -69,7 +85,7 @@ find_vmlinuz() {
 [ "$DO_COPY_KERNEL" = y ] && find_vmlinuz
 
 cpio -oLHnewc -D"$DATA_PATH" -O"$OUTPUT" -R0:0 <"$DATA_PATH"/files.list
-(echo lib/ && echo lib/modules && cd / && find "lib/modules/$KERNEL_VERSION") | cpio -oLAHnewc -D/ -O"$OUTPUT"
+module_files_for_initramfs | cpio -oLAHnewc -D/ -O"$OUTPUT"
 gzip -f "$OUTPUT"
 rm -f "$IMAGE_OUTPUT"
 mksquashfs "/lib/modules/$KERNEL_VERSION" "$IMAGE_OUTPUT"
