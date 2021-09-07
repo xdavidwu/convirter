@@ -208,6 +208,7 @@ static int dump_guestfs(struct v2c_state *state, const char *dir) {
 	if (!ls) {
 		return -errno;
 	} else if (!ls[0]) {
+		free(ls);
 		return 0;
 	}
 	struct guestfs_statns_list *stats = guestfs_lstatnslist(state->guestfs, dir, ls);
