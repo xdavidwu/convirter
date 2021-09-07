@@ -1,0 +1,153 @@
+#include <convirter/io/entry.h>
+#include <convirter/io/xattr.h>
+
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+
+static void copy_stat_from_guestfs_statns(struct cvirt_io_entry *entry,
+		struct guestfs_statns *statns) {
+	entry->stat.st_dev = statns->st_dev;
+	entry->stat.st_ino = statns->st_ino;
+	entry->stat.st_mode = statns->st_mode;
+	entry->stat.st_nlink = statns->st_nlink;
+	entry->stat.st_uid = statns->st_uid;
+	entry->stat.st_gid = statns->st_gid;
+	entry->stat.st_rdev = statns->st_rdev;
+	entry->stat.st_size = statns->st_size;
+	entry->stat.st_blksize = statns->st_blksize;
+	entry->stat.st_blocks = statns->st_blocks;
+	entry->stat.st_atim.tv_sec = statns->st_atime_sec;
+	entry->stat.st_atim.tv_nsec = statns->st_atime_nsec;
+	entry->stat.st_mtim.tv_sec = statns->st_mtime_sec;
+	entry->stat.st_mtim.tv_nsec = statns->st_mtime_nsec;
+	entry->stat.st_ctim.tv_sec = statns->st_ctime_sec;
+	entry->stat.st_ctim.tv_nsec = statns->st_ctime_nsec;
+}
+
+static void set_xattrs_from_guestfs_xattr_list(struct cvirt_io_entry *entry,
+		struct guestfs_xattr_list *xattrs) {
+	if (!xattrs->len) {
+		return;
+	}
+	entry->xattrs = calloc(xattrs->len, sizeof(struct cvirt_io_xattr));
+	assert(entry->xattrs);
+	entry->xattrs_capacity = xattrs->len;
+	entry->xattrs_len = xattrs->len;
+	for (int i = 0; i < xattrs->len; i++) {
+		entry->xattrs[i].name = strdup(xattrs->val[i].attrname);
+		assert(entry->xattrs[i].name);
+		entry->xattrs[i].value = calloc(xattrs->val[i].attrval_len, sizeof(uint8_t));
+		assert(entry->xattrs[i].value);
+		memcpy(entry->xattrs[i].value, xattrs->val[i].attrval,
+			xattrs->val[i].attrval_len);
+		entry->xattrs[i].len = xattrs->val[i].attrval_len;
+	}
+}
+
+static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
+		guestfs_h *guestfs, const char *path) {
+	char **ls = guestfs_ls(guestfs, path);
+	if (!ls) {
+		return;
+	} else if (!ls[0]) {
+		free(ls);
+		return;
+	}
+	int i = 0;
+	int max_length = 0;
+	while (ls[i]) {
+		int l = strlen(ls[i]);
+		max_length = (max_length > l) ? max_length : l;
+		i++;
+	}
+	entry->children = calloc(i, sizeof(struct cvirt_io_entry));
+	assert(entry->children);
+	entry->children_capacity = i;
+	entry->children_len = i;
+	struct guestfs_statns_list *stats = guestfs_lstatnslist(guestfs, path, ls);
+	assert(stats);
+	assert(stats->len == entry->children_len);
+
+	int common_len = strlen(path);
+	char *abs_path = calloc(common_len + 1 + max_length + 1, sizeof(char));
+	strcpy(abs_path, path);
+	strcat(abs_path, "/");
+	assert(abs_path);
+	for (int i = 0; i < entry->children_len; i++) {
+		entry->children[i].name = ls[i];
+		copy_stat_from_guestfs_statns(&entry->children[i], &stats->val[i]);
+
+		strcpy(&abs_path[common_len + 1], ls[i]);
+
+		struct guestfs_xattr_list *xattrs = guestfs_lgetxattrs(guestfs, abs_path);
+		assert(xattrs);
+		set_xattrs_from_guestfs_xattr_list(&entry->children[i], xattrs);
+		guestfs_free_xattr_list(xattrs);
+
+		if (S_ISDIR(entry->children[i].stat.st_mode)) {
+			guestfs_dir_fill_children(&entry->children[i], guestfs, abs_path);
+		} else if (S_ISLNK(entry->children[i].stat.st_mode)) {
+			char *link = guestfs_readlink(guestfs, abs_path);
+			assert(link);
+			entry->children[i].target = link;
+		} else if (S_ISREG(entry->children[i].stat.st_mode)) {
+			// TODO
+		}
+	}
+	guestfs_free_statns_list(stats);
+	free(abs_path);
+	free(ls);
+}
+
+struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs) {
+	struct cvirt_io_entry *result = calloc(1, sizeof(struct cvirt_io_entry));
+	if (!result) {
+		return NULL;
+	}
+
+	result->name = strdup("/");
+	assert(result->name);
+
+	struct guestfs_statns *stat = guestfs_lstatns(guestfs, "/");
+	assert(stat);
+	copy_stat_from_guestfs_statns(result, stat);
+	guestfs_free_statns(stat);
+
+	struct guestfs_xattr_list *xattrs = guestfs_lgetxattrs(guestfs, "/");
+	assert(xattrs);
+	set_xattrs_from_guestfs_xattr_list(result, xattrs);
+	guestfs_free_xattr_list(xattrs);
+
+	guestfs_dir_fill_children(result, guestfs, "/");
+
+	return result;
+}
+
+static void entry_cleanup(struct cvirt_io_entry *entry) {
+	free(entry->name);
+	for (int i = 0; i < entry->xattrs_len; i++) {
+		free(entry->xattrs[i].name);
+		free(entry->xattrs[i].value);
+	}
+	free(entry->xattrs);
+
+	if (S_ISDIR(entry->stat.st_mode)) {
+		for (int i = 0; i < entry->children_len; i++) {
+			entry_cleanup(&entry->children[i]);
+		}
+		free(entry->children);
+	} else if (S_ISLNK(entry->stat.st_mode)) {
+		free(entry->target);
+	}
+}
+
+void cvirt_io_tree_destroy(struct cvirt_io_entry *entry) {
+	if (!entry) {
+		return;
+	}
+
+	entry_cleanup(entry);
+
+	free(entry);
+}
