@@ -25,23 +25,23 @@ static void copy_stat_from_guestfs_statns(struct cvirt_io_entry *entry,
 	entry->stat.st_ctim.tv_nsec = statns->st_ctime_nsec;
 }
 
-static void set_xattrs_from_guestfs_xattr_list(struct cvirt_io_entry *entry,
-		struct guestfs_xattr_list *xattrs) {
-	if (!xattrs->len) {
+static void set_xattrs_from_guestfs_xattr_array(struct cvirt_io_entry *entry,
+		struct guestfs_xattr *xattrs, int count) {
+	if (!count) {
 		return;
 	}
-	entry->xattrs = calloc(xattrs->len, sizeof(struct cvirt_io_xattr));
+	entry->xattrs = calloc(count, sizeof(struct cvirt_io_xattr));
 	assert(entry->xattrs);
-	entry->xattrs_capacity = xattrs->len;
-	entry->xattrs_len = xattrs->len;
-	for (int i = 0; i < xattrs->len; i++) {
-		entry->xattrs[i].name = strdup(xattrs->val[i].attrname);
+	entry->xattrs_capacity = count;
+	entry->xattrs_len = count;
+	for (int i = 0; i < count; i++) {
+		entry->xattrs[i].name = strdup(xattrs[i].attrname);
 		assert(entry->xattrs[i].name);
-		entry->xattrs[i].value = calloc(xattrs->val[i].attrval_len, sizeof(uint8_t));
+		entry->xattrs[i].value = calloc(xattrs[i].attrval_len, sizeof(uint8_t));
 		assert(entry->xattrs[i].value);
-		memcpy(entry->xattrs[i].value, xattrs->val[i].attrval,
-			xattrs->val[i].attrval_len);
-		entry->xattrs[i].len = xattrs->val[i].attrval_len;
+		memcpy(entry->xattrs[i].value, xattrs[i].attrval,
+			xattrs[i].attrval_len);
+		entry->xattrs[i].len = xattrs[i].attrval_len;
 	}
 }
 
@@ -69,6 +69,10 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 	assert(stats);
 	assert(stats->len == entry->children_len);
 
+	struct guestfs_xattr_list *xattrs = guestfs_lxattrlist(guestfs, path, ls);
+	assert(xattrs);
+	int xattrs_idx = 0;
+
 	int common_len = strlen(path);
 	char *abs_path = calloc(common_len + 1 + max_length + 1, sizeof(char));
 	strcpy(abs_path, path);
@@ -80,10 +84,11 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 
 		strcpy(&abs_path[common_len + 1], ls[i]);
 
-		struct guestfs_xattr_list *xattrs = guestfs_lgetxattrs(guestfs, abs_path);
-		assert(xattrs);
-		set_xattrs_from_guestfs_xattr_list(&entry->children[i], xattrs);
-		guestfs_free_xattr_list(xattrs);
+		assert(xattrs_idx < xattrs->len);
+		int l = atoi(xattrs->val[xattrs_idx].attrval);
+		xattrs_idx++;
+		set_xattrs_from_guestfs_xattr_array(&entry->children[i], &xattrs->val[xattrs_idx], l);
+		xattrs_idx += l;
 
 		if (S_ISDIR(entry->children[i].stat.st_mode)) {
 			guestfs_dir_fill_children(&entry->children[i], guestfs, abs_path);
@@ -96,6 +101,7 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 		}
 	}
 	guestfs_free_statns_list(stats);
+	guestfs_free_xattr_list(xattrs);
 	free(abs_path);
 	free(ls);
 }
@@ -116,7 +122,7 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs) {
 
 	struct guestfs_xattr_list *xattrs = guestfs_lgetxattrs(guestfs, "/");
 	assert(xattrs);
-	set_xattrs_from_guestfs_xattr_list(result, xattrs);
+	set_xattrs_from_guestfs_xattr_array(result, xattrs->val, xattrs->len);
 	guestfs_free_xattr_list(xattrs);
 
 	guestfs_dir_fill_children(result, guestfs, "/");
