@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "hex.h"
+
 static void copy_stat_from_guestfs_statns(struct cvirt_io_entry *entry,
 		struct guestfs_statns *statns) {
 	entry->stat.st_dev = statns->st_dev;
@@ -46,7 +48,7 @@ static void set_xattrs_from_guestfs_xattr_array(struct cvirt_io_entry *entry,
 }
 
 static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
-		guestfs_h *guestfs, const char *path) {
+		guestfs_h *guestfs, const char *path, uint32_t flags) {
 	char **ls = guestfs_ls(guestfs, path);
 	if (!ls) {
 		return;
@@ -91,13 +93,16 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 		xattrs_idx += l;
 
 		if (S_ISDIR(entry->children[i].stat.st_mode)) {
-			guestfs_dir_fill_children(&entry->children[i], guestfs, abs_path);
+			guestfs_dir_fill_children(&entry->children[i], guestfs, abs_path, flags);
 		} else if (S_ISLNK(entry->children[i].stat.st_mode)) {
 			char *link = guestfs_readlink(guestfs, abs_path);
 			assert(link);
 			entry->children[i].target = link;
-		} else if (S_ISREG(entry->children[i].stat.st_mode)) {
-			// TODO
+		} else if ((flags & CVIRT_IO_TREE_CHECKSUM) &&
+				S_ISREG(entry->children[i].stat.st_mode)) {
+			char *buf = guestfs_checksum(guestfs, "sha256", abs_path);
+			hex_to_bin(entry->children[i].sha256sum, buf, 32);
+			free(buf);
 		}
 	}
 	guestfs_free_statns_list(stats);
@@ -106,7 +111,7 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 	free(ls);
 }
 
-struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs) {
+struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t flags) {
 	struct cvirt_io_entry *result = calloc(1, sizeof(struct cvirt_io_entry));
 	if (!result) {
 		return NULL;
@@ -125,7 +130,7 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs) {
 	set_xattrs_from_guestfs_xattr_array(result, xattrs->val, xattrs->len);
 	guestfs_free_xattr_list(xattrs);
 
-	guestfs_dir_fill_children(result, guestfs, "/");
+	guestfs_dir_fill_children(result, guestfs, "/", flags);
 
 	return result;
 }

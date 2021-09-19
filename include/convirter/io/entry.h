@@ -27,9 +27,13 @@ struct cvirt_io_entry {
 	};
 };
 
-struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs);
+enum cvirt_io_tree_flags {
+	CVIRT_IO_TREE_CHECKSUM = 1 << 0,
+};
 
-struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *layer);
+struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t flags);
+
+struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *layer, uint32_t flags);
 
 int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root, struct cvirt_oci_r_layer *layer);
 
