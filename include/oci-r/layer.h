@@ -7,6 +7,9 @@ struct cvirt_oci_r_layer {
 	struct archive *image_archive;
 	struct archive *layer_archive;
 	char buf[BUFSZ];
+	int fd;
+	char *name;
+	enum cvirt_oci_r_layer_compression compression;
 };
 
 #endif

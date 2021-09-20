@@ -14,6 +14,8 @@ struct cvirt_oci_r_layer *cvirt_oci_r_layer_from_archive_blob(int fd,
 
 struct archive *cvirt_oci_r_layer_get_libarchive(struct cvirt_oci_r_layer *layer);
 
+int cvirt_oci_r_layer_rewind(struct cvirt_oci_r_layer *layer);
+
 void cvirt_oci_r_layer_destroy(struct cvirt_oci_r_layer *layer);
 
 #endif

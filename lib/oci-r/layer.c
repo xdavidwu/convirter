@@ -36,9 +36,10 @@ struct cvirt_oci_r_layer *cvirt_oci_r_layer_from_archive_blob(int fd,
 		return NULL;
 	}
 	assert(lseek(fd, 0, SEEK_SET) == 0);
-	char *name = digest_to_name(digest);
-	layer->image_archive = archive_from_fd_and_seek(fd, name, NULL);
-	free(name);
+	layer->fd = fd;
+	layer->name = digest_to_name(digest);
+	layer->compression = compression;
+	layer->image_archive = archive_from_fd_and_seek(fd, layer->name, NULL);
 	if (!layer->image_archive) {
 		goto err;
 	}
@@ -71,6 +72,43 @@ err:
 	return NULL;
 }
 
+int cvirt_oci_r_layer_rewind(struct cvirt_oci_r_layer *layer) {
+	archive_read_free(layer->layer_archive);
+	archive_read_free(layer->image_archive);
+	assert(lseek(layer->fd, 0, SEEK_SET) == 0);
+	layer->image_archive = archive_from_fd_and_seek(layer->fd, layer->name, NULL);
+	if (!layer->image_archive) {
+		goto err;
+	}
+	layer->layer_archive = archive_read_new();
+	if (!layer->layer_archive) {
+		goto err;
+	}
+	archive_read_support_format_tar(layer->layer_archive);
+	switch (layer->compression) {
+	case CVIRT_OCI_R_LAYER_COMPRESSION_GZIP:
+		archive_read_support_filter_gzip(layer->layer_archive);
+		break;
+	case CVIRT_OCI_R_LAYER_COMPRESSION_ZSTD:
+		archive_read_support_filter_zstd(layer->layer_archive);
+		break;
+	case CVIRT_OCI_R_LAYER_COMPRESSION_NONE:
+		break;
+	}
+	int res = archive_read_open(layer->layer_archive, layer, inplace_open,
+		inplace_read, inplace_close);
+	if (res == ARCHIVE_OK) {
+		return 0;
+	}
+	fprintf(stderr, "cvirt_oci_r_layer_rewind: open layer archive failed: %s\n",
+		archive_error_string(layer->layer_archive));
+err:
+	archive_read_free(layer->layer_archive);
+	archive_read_free(layer->image_archive);
+	free(layer);
+	return -1;
+}
+
 struct archive *cvirt_oci_r_layer_get_libarchive(struct cvirt_oci_r_layer *layer) {
 	return layer->layer_archive;
 }
@@ -78,5 +116,6 @@ struct archive *cvirt_oci_r_layer_get_libarchive(struct cvirt_oci_r_layer *layer
 void cvirt_oci_r_layer_destroy(struct cvirt_oci_r_layer *layer) {
 	archive_read_free(layer->layer_archive);
 	archive_read_free(layer->image_archive);
+	free(layer->name);
 	free(layer);
 }
