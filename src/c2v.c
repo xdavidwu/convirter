@@ -512,11 +512,9 @@ int main(int argc, char *argv[]) {
 			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
 		struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
 		apply_whiteouts(guestfs, archive);
-		cvirt_oci_r_layer_destroy(layer);
 
 		// second pass: data
-		layer = cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
-			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
+		cvirt_oci_r_layer_rewind(layer);
 		archive = cvirt_oci_r_layer_get_libarchive(layer);
 		dump_layer(guestfs, archive);
 		cvirt_oci_r_layer_destroy(layer);
