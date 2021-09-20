@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
 	struct cvirt_oci_r_layer *layer =
 		cvirt_oci_r_layer_from_archive_blob(argv[1], layer_digest,
 		cvirt_oci_r_manifest_get_layer_compression(manifest, 0));
-	struct cvirt_io_entry *tree = cvirt_io_tree_from_oci_layer(layer, 0);
+	struct cvirt_io_entry *tree = cvirt_io_tree_from_oci_layer(layer, CVIRT_IO_TREE_CHECKSUM);
 	cvirt_oci_r_layer_destroy(layer);
 	cvirt_oci_r_manifest_destroy(manifest);
 	cvirt_oci_r_index_destroy(index);

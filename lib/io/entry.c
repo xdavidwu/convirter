@@ -11,6 +11,7 @@
 #include <archive_entry.h>
 
 #include "hex.h"
+#include "io/entry.h"
 
 static void copy_stat_from_guestfs_statns(struct cvirt_io_entry *entry,
 		struct guestfs_statns *statns) {
@@ -267,10 +268,33 @@ static void set_xattr_from_libarchive(struct cvirt_io_entry *entry,
 	}
 }
 
+static void checksum_from_archive(uint8_t *dest, struct archive *archive,
+		size_t sz, struct io_entry_oci_checksum_ctx *ctx) {
+	while (sz > IO_ENTRY_OCI_BUF_LEN) {
+		la_ssize_t read = archive_read_data(archive, ctx->buffer, IO_ENTRY_OCI_BUF_LEN);
+		gcry_md_write(ctx->gcrypt_handle, ctx->buffer, read);
+		sz -= read;
+	}
+	while (sz > 0) {
+		la_ssize_t read = archive_read_data(archive, ctx->buffer, sz);
+		gcry_md_write(ctx->gcrypt_handle, ctx->buffer, read);
+		sz -= read;
+	}
+	memcpy(dest, gcry_md_read(ctx->gcrypt_handle, 0), 32);
+	gcry_md_reset(ctx->gcrypt_handle);
+}
+
 struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *layer, uint32_t flags) {
 	struct cvirt_io_entry *result = calloc(1, sizeof(struct cvirt_io_entry));
 	if (!result) {
 		return NULL;
+	}
+
+	struct io_entry_oci_checksum_ctx *checksum_ctx = NULL;
+	if (flags & CVIRT_IO_TREE_CHECKSUM) {
+		checksum_ctx = calloc(1, sizeof(struct io_entry_oci_checksum_ctx));
+		assert(checksum_ctx);
+		gcry_md_open(&checksum_ctx->gcrypt_handle, GCRY_MD_SHA256, 0);
 	}
 
 	result->name = strdup("/");
@@ -299,10 +323,11 @@ struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *la
 			entry->target = link;
 		} else if ((flags & CVIRT_IO_TREE_CHECKSUM) &&
 				S_ISREG(entry->stat.st_mode)) {
-			// TODO
-			assert("Not implemented" == NULL);
+			checksum_from_archive(entry->sha256sum, archive,
+				archive_entry_size(archive_entry), checksum_ctx);
 		}
 	}
+	free(checksum_ctx);
 	if (res == ARCHIVE_FATAL) {
 		cvirt_io_tree_destroy(result);
 		return NULL;
