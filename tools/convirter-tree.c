@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	struct cvirt_io_entry *tree = cvirt_io_tree_from_guestfs(guestfs);
+	struct cvirt_io_entry *tree = cvirt_io_tree_from_guestfs(guestfs, 0);
 	print_tree(tree, 0);
 	cvirt_io_tree_destroy(tree);
 
