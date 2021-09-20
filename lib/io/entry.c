@@ -1,9 +1,14 @@
 #include <convirter/io/entry.h>
 #include <convirter/io/xattr.h>
+#include <convirter/oci-r/layer.h>
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <archive.h>
+#include <archive_entry.h>
 
 #include "hex.h"
 
@@ -131,6 +136,177 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 	guestfs_free_xattr_list(xattrs);
 
 	guestfs_dir_fill_children(result, guestfs, "/", flags);
+
+	return result;
+}
+
+// normalize /foo ./foo foo foo/ ... -> foo
+// TODO also sanitize?
+static char *normalize_tar_entry_name(const char *entry) {
+	assert(entry);
+	char *res;
+	if (entry[0] == '/') {
+		res = strdup(&entry[1]);
+	} else if (entry[0] == '.' && entry[1] == '/') {
+		res = strdup(&entry[2]);
+	} else {
+		res = strdup(entry);
+	}
+	assert(res);
+	int l = strlen(res);
+	if (res[l - 1] == '/') {
+		res[l - 1] = '\0';
+	}
+	return res;
+}
+
+static int path_first_part_len(const char *path) {
+	int c = 0;
+	while (*path && *path != '/') {
+		path++;
+		c++;
+	}
+	return c;
+}
+
+static struct cvirt_io_entry *allocate_child(struct cvirt_io_entry *entry,
+		const char *name, int name_len) {
+	if (entry->children_len < entry->children_capacity) {
+		goto prepare_entry;
+	}
+
+	const unsigned int sz = entry->children ? entry->children_capacity * 2 : 8;
+	entry->children = realloc(entry->children, sz * sizeof(struct cvirt_io_entry));
+	memset(&entry->children[entry->children_capacity], 0, (sz - entry->children_capacity) * sizeof(struct cvirt_io_entry));
+	entry->children_capacity = sz;
+
+prepare_entry:
+	entry->children[entry->children_len].name = strndup(name, name_len);
+	assert(entry->children[entry->children_len].name);
+	return &entry->children[entry->children_len++];
+}
+
+static struct cvirt_io_entry *find_entry(struct cvirt_io_entry *entry,
+		const char *name) {
+	int first_part_len = path_first_part_len(name);
+	int name_len = strlen(name);
+	bool last = first_part_len == name_len;
+	if (!first_part_len) { // target should be root
+		assert(entry->name[0] == '/');
+		return entry;
+	}
+
+	for (int i = 0; i < entry->children_len; i++) {
+		if (strlen(entry->children[i].name) == first_part_len &&
+				!strncmp(entry->children[i].name, name, first_part_len)) {
+			if (!S_ISDIR(entry->stat.st_mode)) {
+				if (last) {
+					return &entry->children[i];
+				} else {
+					// TODO try to follow symlinks?
+					assert("Parent is not a directory" == NULL);
+				}
+			}
+			struct cvirt_io_entry *res = find_entry(
+				&entry->children[i], &name[first_part_len + 1]);
+			if (res) {
+				return res;
+			}
+		}
+	}
+
+	// new entry
+	assert(last && "Missing parent directory entries.");
+	return allocate_child(entry, name, first_part_len);
+}
+
+static void copy_stat(struct stat *dest, const struct stat *src) {
+	dest->st_dev = src->st_dev;
+	dest->st_ino = src->st_ino;
+	dest->st_mode = src->st_mode;
+	dest->st_nlink = src->st_nlink;
+	dest->st_uid = src->st_uid;
+	dest->st_gid = src->st_gid;
+	dest->st_rdev = src->st_rdev;
+	dest->st_size = src->st_size;
+	dest->st_blksize = src->st_blksize;
+	dest->st_blocks = src->st_blocks;
+	dest->st_atim.tv_sec = src->st_atim.tv_sec;
+	dest->st_atim.tv_nsec = src->st_atim.tv_nsec;
+	dest->st_mtim.tv_sec = src->st_mtim.tv_sec;
+	dest->st_mtim.tv_nsec = src->st_mtim.tv_nsec;
+	dest->st_ctim.tv_sec = src->st_ctim.tv_sec;
+	dest->st_ctim.tv_nsec = src->st_ctim.tv_nsec;
+}
+
+static void set_xattr_from_libarchive(struct cvirt_io_entry *entry,
+		struct archive_entry *archive_entry) {
+	int count = archive_entry_xattr_count(archive_entry);
+	if (!count) {
+		return;
+	}
+
+	entry->xattrs = calloc(count, sizeof(struct cvirt_io_xattr));
+	assert(entry->xattrs);
+	entry->xattrs_len = count;
+	entry->xattrs_capacity = count;
+	archive_entry_xattr_reset(archive_entry);
+
+	const char *name;
+	const void *val;
+	size_t sz;
+
+	for (int i = 0; i < count; i++) {
+		archive_entry_xattr_next(archive_entry, &name, &val, &sz);
+		entry->xattrs[i].name = strdup(name);
+		assert(entry->xattrs[i].name);
+		entry->xattrs[i].value = calloc(sz, sizeof(uint8_t));
+		assert(entry->xattrs[i].value);
+		memcpy(entry->xattrs[i].value, val, sz);
+		entry->xattrs[i].len = sz;
+	}
+}
+
+struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *layer, uint32_t flags) {
+	struct cvirt_io_entry *result = calloc(1, sizeof(struct cvirt_io_entry));
+	if (!result) {
+		return NULL;
+	}
+
+	result->name = strdup("/");
+	assert(result->name);
+
+	result->stat.st_mode = S_IFDIR | 0755;
+
+	struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
+	struct archive_entry *archive_entry;
+	int res;
+	while ((res = archive_read_next_header(archive, &archive_entry)) != ARCHIVE_EOF
+			&& res != ARCHIVE_FATAL) {
+		char *path = normalize_tar_entry_name(
+			archive_entry_pathname(archive_entry));
+		struct cvirt_io_entry *entry = find_entry(result, path);
+		free(path);
+
+		const struct stat *stat = archive_entry_stat(archive_entry);
+		copy_stat(&entry->stat, stat);
+
+		set_xattr_from_libarchive(entry, archive_entry);
+
+		if (S_ISLNK(entry->stat.st_mode)) {
+			char *link = strdup(archive_entry_symlink(archive_entry));
+			assert(link);
+			entry->target = link;
+		} else if ((flags & CVIRT_IO_TREE_CHECKSUM) &&
+				S_ISREG(entry->stat.st_mode)) {
+			// TODO
+			assert("Not implemented" == NULL);
+		}
+	}
+	if (res == ARCHIVE_FATAL) {
+		cvirt_io_tree_destroy(result);
+		return NULL;
+	}
 
 	return result;
 }
