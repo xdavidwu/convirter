@@ -2,14 +2,16 @@
 #include "convirter/oci-r/config.h"
 #include "oci-r/config.h"
 
-#include <errno.h>
 #include <json_object.h>
+
+#include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-struct cvirt_oci_r_config *cvirt_oci_r_config_from_archive_blob(
-		const char *path, const char *digest) {
+struct cvirt_oci_r_config *cvirt_oci_r_config_from_archive_blob(int fd,
+		const char *digest) {
 	struct cvirt_oci_r_config *config = calloc(1,
 		sizeof(struct cvirt_oci_r_config));
 	if (!config) {
@@ -19,7 +21,8 @@ struct cvirt_oci_r_config *cvirt_oci_r_config_from_archive_blob(
 	if (!name) {
 		goto err;
 	}
-	config->obj = json_from_archive(path, name);
+	assert(lseek(fd, 0, SEEK_SET) == 0);
+	config->obj = json_from_archive(fd, name);
 	free(name);
 	if (!config->obj) {
 		goto err;

@@ -3,14 +3,16 @@
 #include "convirter/oci-r/manifest.h"
 #include "oci-r/manifest.h"
 
-#include <errno.h>
 #include <json_object.h>
+
+#include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-struct cvirt_oci_r_manifest *cvirt_oci_r_manifest_from_archive_blob(
-		const char *path, const char *digest) {
+struct cvirt_oci_r_manifest *cvirt_oci_r_manifest_from_archive_blob(int fd,
+		const char *digest) {
 	struct cvirt_oci_r_manifest *manifest = calloc(1,
 		sizeof(struct cvirt_oci_r_manifest));
 	if (!manifest) {
@@ -20,7 +22,8 @@ struct cvirt_oci_r_manifest *cvirt_oci_r_manifest_from_archive_blob(
 	if (!name) {
 		goto err;
 	}
-	manifest->obj = json_from_archive(path, name);
+	assert(lseek(fd, 0, SEEK_SET) == 0);
+	manifest->obj = json_from_archive(fd, name);
 	free(name);
 	if (!manifest->obj) {
 		goto err;

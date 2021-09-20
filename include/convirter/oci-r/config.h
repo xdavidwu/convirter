@@ -3,8 +3,8 @@
 
 struct cvirt_oci_r_config;
 
-struct cvirt_oci_r_config *cvirt_oci_r_config_from_archive_blob(
-	const char *path, const char *digest);
+struct cvirt_oci_r_config *cvirt_oci_r_config_from_archive_blob(int fd,
+	const char *digest);
 
 int cvirt_oci_r_config_get_cmd_length(struct cvirt_oci_r_config *config);
 

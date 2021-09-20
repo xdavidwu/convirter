@@ -5,8 +5,8 @@ struct cvirt_oci_r_manifest;
 
 enum cvirt_oci_r_layer_compression;
 
-struct cvirt_oci_r_manifest *cvirt_oci_r_manifest_from_archive_blob(
-	const char *path, const char *digest);
+struct cvirt_oci_r_manifest *cvirt_oci_r_manifest_from_archive_blob(int fd,
+	const char *digest);
 
 const char *cvirt_oci_r_manifest_get_config_digest(
 	struct cvirt_oci_r_manifest *manifest);

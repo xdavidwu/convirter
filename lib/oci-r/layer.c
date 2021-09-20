@@ -3,6 +3,8 @@
 #include "oci-r/layer.h"
 
 #include <archive.h>
+
+#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +27,7 @@ int inplace_close(struct archive *archive, void *data) {
 	return ARCHIVE_OK;
 }
 
-struct cvirt_oci_r_layer *cvirt_oci_r_layer_from_archive_blob(const char *path,
+struct cvirt_oci_r_layer *cvirt_oci_r_layer_from_archive_blob(int fd,
 		const char *digest,
 		enum cvirt_oci_r_layer_compression compression) {
 	struct cvirt_oci_r_layer *layer = calloc(1,
@@ -33,8 +35,9 @@ struct cvirt_oci_r_layer *cvirt_oci_r_layer_from_archive_blob(const char *path,
 	if (!layer) {
 		return NULL;
 	}
+	assert(lseek(fd, 0, SEEK_SET) == 0);
 	char *name = digest_to_name(digest);
-	layer->image_archive = archive_from_file_and_seek(path, name, NULL);
+	layer->image_archive = archive_from_fd_and_seek(fd, name, NULL);
 	free(name);
 	if (!layer->image_archive) {
 		goto err;

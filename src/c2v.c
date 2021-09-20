@@ -5,12 +5,14 @@
 #include <convirter/oci-r/index.h>
 #include <convirter/oci-r/layer.h>
 #include <convirter/oci-r/manifest.h>
+#include <fcntl.h>
 #include <guestfs.h>
 #include <libgen.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/sysmacros.h>
 
 static const int bufsz = 4000 * 1024;
@@ -494,9 +496,11 @@ int main(int argc, char *argv[]) {
 		C2V_LAYERS "/base",
 		GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
 
-	struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(argv[1]);
+	int fd = open(argv[1], O_RDONLY | O_CLOEXEC);
+	assert(fd != -1);
+	struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(fd);
 	const char *manifest_digest = cvirt_oci_r_index_get_native_manifest_digest(index);
-	struct cvirt_oci_r_manifest *manifest = cvirt_oci_r_manifest_from_archive_blob(argv[1], manifest_digest);
+	struct cvirt_oci_r_manifest *manifest = cvirt_oci_r_manifest_from_archive_blob(fd, manifest_digest);
 	const char *config_digest = cvirt_oci_r_manifest_get_config_digest(manifest);
 	int len = cvirt_oci_r_manifest_get_layers_length(manifest);
 	for (int i = 0; i < len; i++) {
@@ -504,14 +508,14 @@ int main(int argc, char *argv[]) {
 
 		// first pass: whiteouts
 		struct cvirt_oci_r_layer *layer =
-			cvirt_oci_r_layer_from_archive_blob(argv[1], layer_digest,
+			cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
 			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
 		struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
 		apply_whiteouts(guestfs, archive);
 		cvirt_oci_r_layer_destroy(layer);
 
 		// second pass: data
-		layer = cvirt_oci_r_layer_from_archive_blob(argv[1], layer_digest,
+		layer = cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
 			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
 		archive = cvirt_oci_r_layer_get_libarchive(layer);
 		dump_layer(guestfs, archive);
@@ -528,11 +532,12 @@ int main(int argc, char *argv[]) {
 		free(snapshot_dest);
 	}
 	struct cvirt_oci_r_config *config =
-		cvirt_oci_r_config_from_archive_blob(argv[1], config_digest);
+		cvirt_oci_r_config_from_archive_blob(fd, config_digest);
 	generate_init_script(guestfs, config);
 	cvirt_oci_r_config_destroy(config);
 	cvirt_oci_r_manifest_destroy(manifest);
 	cvirt_oci_r_index_destroy(index);
+	close(fd);
 
 	guestfs_umount_all(guestfs);
 	guestfs_shutdown(guestfs);

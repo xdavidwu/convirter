@@ -4,16 +4,19 @@
 #include "goarch.h"
 
 #include <json_object.h>
+
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
-struct cvirt_oci_r_index *cvirt_oci_r_index_from_archive(const char *path) {
+struct cvirt_oci_r_index *cvirt_oci_r_index_from_archive(int fd) {
 	struct cvirt_oci_r_index *index = calloc(1,
 		sizeof(struct cvirt_oci_r_index));
 	if (!index) {
 		goto err;
 	}
-	index->obj = json_from_archive(path, "index.json");
+	assert(lseek(fd, 0, SEEK_SET) == 0);
+	index->obj = json_from_archive(fd, "index.json");
 	if (!index->obj) {
 		goto err;
 	}

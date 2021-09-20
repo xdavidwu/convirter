@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct archive *archive_from_file_and_seek(const char *path, const char *name,
+struct archive *archive_from_fd_and_seek(int fd, const char *name,
 		struct archive_entry **entry) {
 	struct archive *res = archive_read_new();
 	if (!res) {
@@ -14,7 +14,7 @@ struct archive *archive_from_file_and_seek(const char *path, const char *name,
 	}
 	archive_read_support_format_tar(res);
 	int ret;
-	ret = archive_read_open_filename(res, path, 4096);
+	ret = archive_read_open_fd(res, fd, 4096);
 	if (ret != ARCHIVE_OK) {
 		goto err;
 	}
@@ -32,11 +32,11 @@ err:
 	return NULL;
 }
 
-struct json_object *json_from_archive(const char *path, const char *name) {
+struct json_object *json_from_archive(int fd, const char *name) {
 	struct json_object *res = NULL;
 	struct archive_entry *entry = NULL;
 	char *json_str = NULL;
-	struct archive *archive = archive_from_file_and_seek(path, name, &entry);
+	struct archive *archive = archive_from_fd_and_seek(fd, name, &entry);
 	if (!archive) {
 		goto out;
 	}

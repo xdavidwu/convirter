@@ -9,9 +9,8 @@ enum cvirt_oci_r_layer_compression {
 	CVIRT_OCI_R_LAYER_COMPRESSION_GZIP,
 };
 
-struct cvirt_oci_r_layer *cvirt_oci_r_layer_from_archive_blob(
-	const char *path, const char *digest,
-	enum cvirt_oci_r_layer_compression compression);
+struct cvirt_oci_r_layer *cvirt_oci_r_layer_from_archive_blob(int fd,
+	const char *digest, enum cvirt_oci_r_layer_compression compression);
 
 struct archive *cvirt_oci_r_layer_get_libarchive(struct cvirt_oci_r_layer *layer);
 
