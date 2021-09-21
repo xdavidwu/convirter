@@ -188,7 +188,7 @@ prepare_entry:
 }
 
 static struct cvirt_io_entry *find_entry(struct cvirt_io_entry *entry,
-		const char *name) {
+		const char *name, bool create) {
 	int first_part_len = path_first_part_len(name);
 	int name_len = strlen(name);
 	bool last = first_part_len == name_len;
@@ -200,20 +200,25 @@ static struct cvirt_io_entry *find_entry(struct cvirt_io_entry *entry,
 	for (int i = 0; i < entry->children_len; i++) {
 		if (strlen(entry->children[i].name) == first_part_len &&
 				!strncmp(entry->children[i].name, name, first_part_len)) {
-			if (!S_ISDIR(entry->stat.st_mode)) {
-				if (last) {
-					return &entry->children[i];
-				} else {
-					// TODO try to follow symlinks?
-					assert("Parent is not a directory" == NULL);
-				}
+			if (last) {
+				return &entry->children[i];
 			}
+			if (!S_ISDIR(entry->stat.st_mode)) {
+				// TODO try to follow symlinks?
+				assert("Parent is not a directory" == NULL);
+			}
+
 			struct cvirt_io_entry *res = find_entry(
-				&entry->children[i], &name[first_part_len + 1]);
+				&entry->children[i], &name[first_part_len + 1],
+				create);
 			if (res) {
 				return res;
 			}
 		}
+	}
+
+	if (!create) {
+		return NULL;
 	}
 
 	// new entry
@@ -284,6 +289,30 @@ static void checksum_from_archive(uint8_t *dest, struct archive *archive,
 	gcry_md_reset(ctx->gcrypt_handle);
 }
 
+static void entry_deep_copy(struct cvirt_io_entry *dest, struct cvirt_io_entry *src) {
+	copy_stat(&dest->stat, &src->stat);
+
+	dest->xattrs = calloc(src->xattrs_len, sizeof(struct cvirt_io_xattr));
+	assert(dest->xattrs);
+	for (int i = 0; i < src->xattrs_len; i++) {
+		dest->xattrs[i].name = strdup(src->xattrs[i].name);
+		assert(dest->xattrs[i].name);
+		dest->xattrs[i].value = calloc(src->xattrs[i].len, sizeof(uint8_t));
+		assert(dest->xattrs[i].value);
+		memcpy(dest->xattrs[i].value, src->xattrs[i].value, src->xattrs[i].len);
+		dest->xattrs[i].len = src->xattrs[i].len;
+	}
+
+	assert(!S_ISDIR(dest->stat.st_mode));
+
+	if (S_ISREG(dest->stat.st_mode)) {
+		memcpy(dest->sha256sum, src->sha256sum, 32);
+	} else if (S_ISLNK(dest->stat.st_mode)) {
+		dest->target = strdup(src->target);
+		assert(dest->target);
+	}
+}
+
 struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *layer, uint32_t flags) {
 	struct cvirt_io_entry *result = calloc(1, sizeof(struct cvirt_io_entry));
 	if (!result) {
@@ -309,11 +338,21 @@ struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *la
 			&& res != ARCHIVE_FATAL) {
 		char *path = normalize_tar_entry_name(
 			archive_entry_pathname(archive_entry));
-		struct cvirt_io_entry *entry = find_entry(result, path);
+		struct cvirt_io_entry *entry = find_entry(result, path, true);
 		free(path);
 
 		const struct stat *stat = archive_entry_stat(archive_entry);
 		copy_stat(&entry->stat, stat);
+
+		if ((entry->stat.st_mode & S_IFMT) == 0) { // hardlink
+			char *hardlink = normalize_tar_entry_name(
+				archive_entry_hardlink(archive_entry));
+			struct cvirt_io_entry *target = find_entry(result, hardlink, false);
+			assert(target);
+			free(hardlink);
+			entry_deep_copy(entry, target);
+			continue;
+		}
 
 		set_xattr_from_libarchive(entry, archive_entry);
 
