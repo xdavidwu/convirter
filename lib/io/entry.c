@@ -351,12 +351,8 @@ static void entry_deep_copy(struct cvirt_io_entry *dest, struct cvirt_io_entry *
 	}
 }
 
-struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *layer, uint32_t flags) {
-	struct cvirt_io_entry *result = calloc(1, sizeof(struct cvirt_io_entry));
-	if (!result) {
-		return NULL;
-	}
-
+static int apply_layer_addition(struct cvirt_io_entry *root,
+		struct cvirt_oci_r_layer *layer, uint32_t flags) {
 	struct io_entry_oci_checksum_ctx *checksum_ctx = NULL;
 	if (flags & CVIRT_IO_TREE_CHECKSUM) {
 		checksum_ctx = calloc(1, sizeof(struct io_entry_oci_checksum_ctx));
@@ -364,23 +360,60 @@ struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *la
 		gcry_md_open(&checksum_ctx->gcrypt_handle, GCRY_MD_SHA256, 0);
 	}
 
-	result->name = strdup("/");
-	assert(result->name);
+	struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
+	struct archive_entry *archive_entry;
+	int res;
+	while ((res = archive_read_next_header(archive, &archive_entry)) != ARCHIVE_EOF
+			&& res != ARCHIVE_FATAL) {
+		const char *orig_name = archive_entry_pathname(archive_entry);
+		char *basename_dup = cvirt_xstrdup(orig_name);
+		if (!strncmp(basename(basename_dup), ".wh.", 4)) {
+			// whiteouts
+			free(basename_dup);
+			continue;
+		}
+		free(basename_dup);
 
-	result->stat.st_mode = S_IFDIR | 0755;
+		char *path = normalize_tar_entry_name(orig_name);
+		struct cvirt_io_entry *entry = find_entry(root, path, true);
+		free(path);
 
-	int res = cvirt_io_tree_oci_apply_layer(result, layer, flags);
-	if (res < 0) {
-		cvirt_io_tree_destroy(result);
-		return NULL;
+		const struct stat *stat = archive_entry_stat(archive_entry);
+		copy_stat(&entry->stat, stat);
+
+		if ((entry->stat.st_mode & S_IFMT) == 0) { // hardlink
+			char *hardlink = normalize_tar_entry_name(
+				archive_entry_hardlink(archive_entry));
+			struct cvirt_io_entry *target = find_entry(root, hardlink, false);
+			assert(target);
+			free(hardlink);
+			entry_deep_copy(entry, target);
+			continue;
+		}
+
+		set_xattr_from_libarchive(entry, archive_entry);
+
+		if (S_ISLNK(entry->stat.st_mode)) {
+			char *link = strdup(archive_entry_symlink(archive_entry));
+			assert(link);
+			entry->target = link;
+		} else if ((flags & CVIRT_IO_TREE_CHECKSUM) &&
+				S_ISREG(entry->stat.st_mode)) {
+			checksum_from_archive(entry->sha256sum, archive,
+				archive_entry_size(archive_entry), checksum_ctx);
+		}
+	}
+	free(checksum_ctx);
+	if (res == ARCHIVE_FATAL) {
+		return -1;
 	}
 
-	return result;
+	return 0;
 }
 
 static void entry_cleanup(struct cvirt_io_entry *entry);
 
-int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root,
+static int apply_layer_substration(struct cvirt_io_entry *root,
 		struct cvirt_oci_r_layer *layer, uint32_t flags) {
 	struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
 	struct archive_entry *archive_entry;
@@ -433,6 +466,14 @@ int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root,
 	if (res == ARCHIVE_FATAL) {
 		return -1;
 	}
+	return 0;
+}
+
+struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *layer, uint32_t flags) {
+	struct cvirt_io_entry *result = calloc(1, sizeof(struct cvirt_io_entry));
+	if (!result) {
+		return NULL;
+	}
 
 	struct io_entry_oci_checksum_ctx *checksum_ctx = NULL;
 	if (flags & CVIRT_IO_TREE_CHECKSUM) {
@@ -441,54 +482,29 @@ int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root,
 		gcry_md_open(&checksum_ctx->gcrypt_handle, GCRY_MD_SHA256, 0);
 	}
 
+	result->name = strdup("/");
+	assert(result->name);
+
+	result->stat.st_mode = S_IFDIR | 0755;
+
+	int res = apply_layer_addition(result, layer, flags);
+	if (res < 0) {
+		cvirt_io_tree_destroy(result);
+		return NULL;
+	}
+
+	return result;
+}
+
+int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root,
+		struct cvirt_oci_r_layer *layer, uint32_t flags) {
+	int res = apply_layer_substration(root, layer, flags);
+	if (res < 0) {
+		return res;
+	}
 	cvirt_oci_r_layer_rewind(layer);
-	archive = cvirt_oci_r_layer_get_libarchive(layer);
-	while ((res = archive_read_next_header(archive, &archive_entry)) != ARCHIVE_EOF
-			&& res != ARCHIVE_FATAL) {
-		const char *orig_name = archive_entry_pathname(archive_entry);
-		char *basename_dup = cvirt_xstrdup(orig_name);
-		if (!strncmp(basename(basename_dup), ".wh.", 4)) {
-			// whiteouts
-			free(basename_dup);
-			continue;
-		}
-		free(basename_dup);
+	return apply_layer_addition(root, layer, flags);
 
-		char *path = normalize_tar_entry_name(orig_name);
-		struct cvirt_io_entry *entry = find_entry(root, path, true);
-		free(path);
-
-		const struct stat *stat = archive_entry_stat(archive_entry);
-		copy_stat(&entry->stat, stat);
-
-		if ((entry->stat.st_mode & S_IFMT) == 0) { // hardlink
-			char *hardlink = normalize_tar_entry_name(
-				archive_entry_hardlink(archive_entry));
-			struct cvirt_io_entry *target = find_entry(root, hardlink, false);
-			assert(target);
-			free(hardlink);
-			entry_deep_copy(entry, target);
-			continue;
-		}
-
-		set_xattr_from_libarchive(entry, archive_entry);
-
-		if (S_ISLNK(entry->stat.st_mode)) {
-			char *link = strdup(archive_entry_symlink(archive_entry));
-			assert(link);
-			entry->target = link;
-		} else if ((flags & CVIRT_IO_TREE_CHECKSUM) &&
-				S_ISREG(entry->stat.st_mode)) {
-			checksum_from_archive(entry->sha256sum, archive,
-				archive_entry_size(archive_entry), checksum_ctx);
-		}
-	}
-	free(checksum_ctx);
-	if (res == ARCHIVE_FATAL) {
-		return -1;
-	}
-
-	return 0;
 }
 
 static void entry_cleanup(struct cvirt_io_entry *entry) {
