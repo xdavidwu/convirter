@@ -53,8 +53,26 @@ static void set_xattrs_from_guestfs_xattr_array(struct cvirt_io_entry *entry,
 	}
 }
 
+static void checksum_from_guestfs(uint8_t *dest, guestfs_h *guestfs,
+		const char *path, size_t sz,
+		struct io_entry_guestfs_checksum_ctx *ctx) {
+	size_t offset = 0, read = 0;
+	while (sz > 0) {
+		char *buf = guestfs_pread(guestfs, path,
+			sz > IO_ENTRY_GUESTFS_BUF_LEN ?
+			IO_ENTRY_GUESTFS_BUF_LEN : sz, offset, &read);
+		gcry_md_write(ctx->gcrypt_handle, buf, read);
+		free(buf);
+		sz -= read;
+		offset += read;
+	}
+	memcpy(dest, gcry_md_read(ctx->gcrypt_handle, 0), 32);
+	gcry_md_reset(ctx->gcrypt_handle);
+}
+
 static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
-		guestfs_h *guestfs, const char *path, uint32_t flags) {
+		guestfs_h *guestfs, const char *path, uint32_t flags,
+		struct io_entry_guestfs_checksum_ctx *checksum_ctx) {
 	char **ls = guestfs_ls(guestfs, path);
 	if (!ls) {
 		return;
@@ -99,16 +117,17 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 		xattrs_idx += l;
 
 		if (S_ISDIR(entry->children[i].stat.st_mode)) {
-			guestfs_dir_fill_children(&entry->children[i], guestfs, abs_path, flags);
+			guestfs_dir_fill_children(&entry->children[i], guestfs,
+				abs_path, flags, checksum_ctx);
 		} else if (S_ISLNK(entry->children[i].stat.st_mode)) {
 			char *link = guestfs_readlink(guestfs, abs_path);
 			assert(link);
 			entry->children[i].target = link;
 		} else if ((flags & CVIRT_IO_TREE_CHECKSUM) &&
 				S_ISREG(entry->children[i].stat.st_mode)) {
-			char *buf = guestfs_checksum(guestfs, "sha256", abs_path);
-			hex_to_bin(entry->children[i].sha256sum, buf, 32);
-			free(buf);
+			checksum_from_guestfs(entry->children[i].sha256sum,
+				guestfs, abs_path,
+				entry->children[i].stat.st_size, checksum_ctx);
 		}
 	}
 	guestfs_free_statns_list(stats);
@@ -121,6 +140,13 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 	struct cvirt_io_entry *result = calloc(1, sizeof(struct cvirt_io_entry));
 	if (!result) {
 		return NULL;
+	}
+
+	struct io_entry_guestfs_checksum_ctx *checksum_ctx = NULL;
+	if (flags & CVIRT_IO_TREE_CHECKSUM) {
+		checksum_ctx = calloc(1, sizeof(struct io_entry_guestfs_checksum_ctx));
+		assert(checksum_ctx);
+		gcry_md_open(&checksum_ctx->gcrypt_handle, GCRY_MD_SHA256, 0);
 	}
 
 	result->name = strdup("/");
@@ -136,7 +162,7 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 	set_xattrs_from_guestfs_xattr_array(result, xattrs->val, xattrs->len);
 	guestfs_free_xattr_list(xattrs);
 
-	guestfs_dir_fill_children(result, guestfs, "/", flags);
+	guestfs_dir_fill_children(result, guestfs, "/", flags, checksum_ctx);
 
 	return result;
 }
