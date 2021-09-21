@@ -301,15 +301,25 @@ static void set_xattr_from_libarchive(struct cvirt_io_entry *entry,
 
 static void checksum_from_archive(uint8_t *dest, struct archive *archive,
 		size_t sz, struct io_entry_oci_checksum_ctx *ctx) {
-	while (sz > IO_ENTRY_OCI_BUF_LEN) {
-		la_ssize_t read = archive_read_data(archive, ctx->buffer, IO_ENTRY_OCI_BUF_LEN);
-		gcry_md_write(ctx->gcrypt_handle, ctx->buffer, read);
-		sz -= read;
+	off_t last_pos = 0;
+	const void *buf;
+	size_t len;
+	off_t offset;
+	/*
+	 * Since OCI spec discourage use of sparse entries, let's use
+	 * archive_read_data_block directly instead of archive_read_data
+	 */
+	while (archive_read_data_block(archive, &buf, &len, &offset) != ARCHIVE_EOF) {
+		while (last_pos < offset) {
+			gcry_md_putc(ctx->gcrypt_handle, 0);
+			last_pos++;
+		}
+		gcry_md_write(ctx->gcrypt_handle, buf, len);
+		last_pos = offset + len;
 	}
-	while (sz > 0) {
-		la_ssize_t read = archive_read_data(archive, ctx->buffer, sz);
-		gcry_md_write(ctx->gcrypt_handle, ctx->buffer, read);
-		sz -= read;
+	while (last_pos < offset) {
+		gcry_md_putc(ctx->gcrypt_handle, 0);
+		last_pos++;
 	}
 	memcpy(dest, gcry_md_read(ctx->gcrypt_handle, 0), 32);
 	gcry_md_reset(ctx->gcrypt_handle);
