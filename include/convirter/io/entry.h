@@ -35,7 +35,7 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 
 struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *layer, uint32_t flags);
 
-int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root, struct cvirt_oci_r_layer *layer);
+int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root, struct cvirt_oci_r_layer *layer, uint32_t flags);
 
 void cvirt_io_tree_destroy(struct cvirt_io_entry *entry);
 

@@ -3,6 +3,7 @@
 #include <convirter/oci-r/layer.h>
 
 #include <assert.h>
+#include <libgen.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,7 @@
 
 #include "hex.h"
 #include "io/entry.h"
+#include "xmem.h"
 
 static void copy_stat_from_guestfs_statns(struct cvirt_io_entry *entry,
 		struct guestfs_statns *statns) {
@@ -367,14 +369,93 @@ struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *la
 
 	result->stat.st_mode = S_IFDIR | 0755;
 
+	int res = cvirt_io_tree_oci_apply_layer(result, layer, flags);
+	if (res < 0) {
+		cvirt_io_tree_destroy(result);
+		return NULL;
+	}
+
+	return result;
+}
+
+static void entry_cleanup(struct cvirt_io_entry *entry);
+
+int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root,
+		struct cvirt_oci_r_layer *layer, uint32_t flags) {
 	struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
 	struct archive_entry *archive_entry;
 	int res;
 	while ((res = archive_read_next_header(archive, &archive_entry)) != ARCHIVE_EOF
 			&& res != ARCHIVE_FATAL) {
-		char *path = normalize_tar_entry_name(
-			archive_entry_pathname(archive_entry));
-		struct cvirt_io_entry *entry = find_entry(result, path, true);
+		const char *orig_name = archive_entry_pathname(archive_entry);
+		char *basename_dup = cvirt_xstrdup(orig_name);
+		const char *base = basename(basename_dup);
+		if (strncmp(base, ".wh.", 4)) {
+			// not whiteouts
+			free(basename_dup);
+			continue;
+		}
+		char *dir_dup = normalize_tar_entry_name(orig_name);
+		const char *dir = dirname(dir_dup);
+		struct cvirt_io_entry *dir_entry = find_entry(root, dir, false);
+		if (!dir_entry || !S_ISDIR(dir_entry->stat.st_mode)) {
+			free(basename_dup);
+			free(dir_dup);
+			continue;
+		}
+		if (!strcmp(base, ".wh..wh..opq")) {
+			for (int i = 0; i < dir_entry->children_len; i++) {
+				entry_cleanup(&dir_entry->children[i]);
+			}
+			dir_entry->children_len = 0;
+		} else {
+			const char *realname = &base[4];
+			if (!*realname) {
+				free(basename_dup);
+				free(dir_dup);
+				continue;
+			}
+
+			for (int i = 0; i < dir_entry->children_len; i++) {
+				if (!strcmp(realname, dir_entry->children[i].name)) {
+					entry_cleanup(&dir_entry->children[i]);
+					memmove(&dir_entry->children[i],
+						&dir_entry->children[i + 1],
+						(dir_entry->children_len - 1 - i) *
+						sizeof(struct cvirt_io_entry));
+					break;
+				}
+			}
+		}
+		free(basename_dup);
+		free(dir_dup);
+	}
+	if (res == ARCHIVE_FATAL) {
+		return -1;
+	}
+
+	struct io_entry_oci_checksum_ctx *checksum_ctx = NULL;
+	if (flags & CVIRT_IO_TREE_CHECKSUM) {
+		checksum_ctx = calloc(1, sizeof(struct io_entry_oci_checksum_ctx));
+		assert(checksum_ctx);
+		gcry_md_open(&checksum_ctx->gcrypt_handle, GCRY_MD_SHA256, 0);
+	}
+
+	cvirt_oci_r_layer_rewind(layer);
+	archive = cvirt_oci_r_layer_get_libarchive(layer);
+	while ((res = archive_read_next_header(archive, &archive_entry)) != ARCHIVE_EOF
+			&& res != ARCHIVE_FATAL) {
+		const char *orig_name = archive_entry_pathname(archive_entry);
+		char *basename_dup = cvirt_xstrdup(orig_name);
+		if (!strncmp(basename(basename_dup), ".wh.", 4)) {
+			// whiteouts
+			free(basename_dup);
+			continue;
+		}
+		free(basename_dup);
+
+		char *path = normalize_tar_entry_name(orig_name);
+		struct cvirt_io_entry *entry = find_entry(root, path, true);
 		free(path);
 
 		const struct stat *stat = archive_entry_stat(archive_entry);
@@ -383,7 +464,7 @@ struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *la
 		if ((entry->stat.st_mode & S_IFMT) == 0) { // hardlink
 			char *hardlink = normalize_tar_entry_name(
 				archive_entry_hardlink(archive_entry));
-			struct cvirt_io_entry *target = find_entry(result, hardlink, false);
+			struct cvirt_io_entry *target = find_entry(root, hardlink, false);
 			assert(target);
 			free(hardlink);
 			entry_deep_copy(entry, target);
@@ -404,11 +485,10 @@ struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *la
 	}
 	free(checksum_ctx);
 	if (res == ARCHIVE_FATAL) {
-		cvirt_io_tree_destroy(result);
-		return NULL;
+		return -1;
 	}
 
-	return result;
+	return 0;
 }
 
 static void entry_cleanup(struct cvirt_io_entry *entry) {
