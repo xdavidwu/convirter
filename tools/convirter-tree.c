@@ -13,7 +13,14 @@ static void print_tree(struct cvirt_io_entry *entry, int level) {
 	for (int i = 0; i < level; i++) {
 		putchar('-');
 	}
-	puts(entry->name);
+	fputs(entry->name, stdout);
+	if (S_ISREG(entry->stat.st_mode)) {
+		putchar(' ');
+		for (int i = 0; i < 32; i++) {
+			printf("%02x", entry->sha256sum[i]);
+		}
+	}
+	putchar('\n');
 
 	if (S_ISDIR(entry->stat.st_mode)) {
 		for (int i = 0; i < entry->children_len; i++) {
@@ -87,7 +94,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	struct cvirt_io_entry *tree = cvirt_io_tree_from_guestfs(guestfs, 0);
+	struct cvirt_io_entry *tree = cvirt_io_tree_from_guestfs(guestfs, CVIRT_IO_TREE_CHECKSUM);
 	print_tree(tree, 0);
 	cvirt_io_tree_destroy(tree);
 

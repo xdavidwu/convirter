@@ -15,7 +15,14 @@ static void print_tree(struct cvirt_io_entry *entry, int level) {
 	for (int i = 0; i < level; i++) {
 		putchar('-');
 	}
-	puts(entry->name);
+	fputs(entry->name, stdout);
+	if (S_ISREG(entry->stat.st_mode)) {
+		putchar(' ');
+		for (int i = 0; i < 32; i++) {
+			printf("%02x", entry->sha256sum[i]);
+		}
+	}
+	putchar('\n');
 
 	if (S_ISDIR(entry->stat.st_mode)) {
 		for (int i = 0; i < entry->children_len; i++) {
