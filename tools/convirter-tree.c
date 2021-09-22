@@ -3,17 +3,28 @@
 #include <convirter/oci-r/layer.h>
 #include <convirter/oci-r/manifest.h>
 
-#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <getopt.h>
 
 #include "../common/guestfs.h"
 
+static const char usage[] = "\
+Usage: %s INPUT\n\
+Print file tree from INPUT\n\
+\n\
+INPUT is in FORMAT:FILE, where FORMAT is either disk-image or oci-archive\n";
+
+static const struct option long_options[] = {
+	{0},
+};
+
 static void print_tree(struct cvirt_io_entry *entry, int level) {
+	if (!strcmp(entry->name, ".c2v")) return;
 	for (int i = 0; i < level; i++) {
 		putchar('-');
 	}
@@ -34,11 +45,24 @@ static void print_tree(struct cvirt_io_entry *entry, int level) {
 }
 
 int main(int argc, char *argv[]) {
-	assert(argc == 2);
 	struct cvirt_io_entry *tree;
 
-	if (!strncmp(argv[1], "disk-image:", 11)) {
-		guestfs_h *guestfs = create_guestfs_mount_first_linux(&argv[1][11], NULL);
+	int opt;
+	while ((opt = getopt_long(argc, argv, "", long_options, NULL)) != -1) {
+		switch (opt) {
+		case '?':
+			fprintf(stderr, usage, argv[0]);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	if (optind + 1 != argc) {
+		fprintf(stderr, usage, argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
+	if (!strncmp(argv[optind], "disk-image:", 11)) {
+		guestfs_h *guestfs = create_guestfs_mount_first_linux(&argv[optind][11], NULL);
 		if (!guestfs) {
 			exit(EXIT_FAILURE);
 		}
@@ -48,8 +72,8 @@ int main(int argc, char *argv[]) {
 		guestfs_umount_all(guestfs);
 		guestfs_shutdown(guestfs);
 		guestfs_close(guestfs);
-	} else if (!strncmp(argv[1], "oci-archive:", 12)) {
-		int fd = open(&argv[1][12], O_RDONLY | O_CLOEXEC);
+	} else if (!strncmp(argv[optind], "oci-archive:", 12)) {
+		int fd = open(&argv[optind][12], O_RDONLY | O_CLOEXEC);
 		if (fd < 0) {
 			fprintf(stderr, "Failed to open OCI archive: %s\n", strerror(errno));
 			exit(EXIT_FAILURE);
@@ -68,7 +92,8 @@ int main(int argc, char *argv[]) {
 		cvirt_oci_r_index_destroy(index);
 		close(fd);
 	} else {
-		fprintf(stderr, "Unrecognized input: %s\n", argv[1]);
+		fprintf(stderr, "Unrecognized input: %s\n", argv[optind]);
+		fprintf(stderr, usage, argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
