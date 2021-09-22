@@ -70,7 +70,7 @@ guestfs_h *create_guestfs_mount_first_linux(const char *image,
 		free(mounts);
 		goto err_launched;
 	}
-	int sz = 2, succeeded_mounts_index = 0;
+	int sz = 0, succeeded_mounts_index = 0;
 	while (mounts[sz += 2]);
 	if (succeeded_mounts) {
 		*succeeded_mounts = calloc(sz + 1, sizeof(char *));
