@@ -8,7 +8,7 @@ executable(
 
 executable(
   'convirter-tree',
-  'convirter-tree.c',
+  ['convirter-tree.c', '../common/guestfs.c'],
   dependencies: [libguestfs],
   link_with: [libconvirter],
   include_directories: [libconvirter_include]

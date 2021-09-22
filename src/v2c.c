@@ -19,6 +19,8 @@
 #include <convirter/oci/layer.h>
 #include <guestfs.h>
 
+#include "../common/guestfs.h"
+
 static const char usage[] =
 	"Usage: %s [OPTION]... INPUT OUTPUT\n"
 	"Convert a VM image into OCI-compatible container image.\n"
@@ -268,18 +270,11 @@ cleanup:
 	return res;
 }
 
-static int mounts_cmp(const void *a, const void *b) {
-	return strcmp(*(const char **)a, *(const char **)b);
-}
-
-static int cleanup_fstab(struct v2c_state *state, char **mounts, bool *mount_succeeded) {
+static int cleanup_fstab(struct v2c_state *state, char **mounts) {
 	/* TODO: make it optional */
 	guestfs_aug_init(state->guestfs, "/", 0);
 	int res = 0;
 	for (int index = 0; mounts[index]; index += 2) {
-		if (!mount_succeeded[index / 2]) {
-			continue;
-		}
 		char exp[27 + strlen(mounts[index]) + 1];
 		// TODO: also match devices?
 		// needs to consider: UUID, PARTUUID, LABEL, PARTLABEL
@@ -361,7 +356,6 @@ int main(int argc, char *argv[]) {
 			.compression = CVIRT_OCI_LAYER_COMPRESSION_ZSTD,
 		},
 	};
-	int res = 0;
 	if (parse_options(&state, argc, argv) < 0 || argc - optind != 2) {
 		fprintf(stderr, usage, argv[0]);
 		exit(EXIT_FAILURE);
@@ -375,48 +369,9 @@ int main(int argc, char *argv[]) {
 
 	state.modification_start = time(NULL);
 
-	state.guestfs = guestfs_create();
+	char **succeeded_mounts;
+	state.guestfs = create_guestfs_mount_first_linux(argv[optind], &succeeded_mounts);
 	if (!state.guestfs) {
-		exit(EXIT_FAILURE);
-	}
-	res = guestfs_add_drive_opts(state.guestfs, argv[optind],
-		GUESTFS_ADD_DRIVE_OPTS_READONLY, 1, -1);
-	if (res < 0) {
-		exit(EXIT_FAILURE);
-	}
-	res = guestfs_launch(state.guestfs);
-	if (res < 0) {
-		exit(EXIT_FAILURE);
-	}
-
-	char **roots = guestfs_inspect_os(state.guestfs);
-	char *target_root = NULL;
-	if (!roots) {
-		exit(EXIT_FAILURE);
-	} else if (!roots[0]) {
-		fprintf(stderr, "No root found.\n");
-		exit(EXIT_FAILURE);
-	}
-	int i = 0;
-	for (; roots[i]; i++) {
-		char *type = guestfs_inspect_get_type(state.guestfs, roots[i]);
-		if (!type) {
-			free(roots[i]);
-			continue;
-		}
-		if (!strcmp(type, "linux")) {
-			target_root = strdup(roots[i]);
-			assert(target_root);
-			break;
-		}
-		free(roots[i]);
-	}
-	for (; roots[i]; i++) {
-		free(roots[i]);
-	}
-	free(roots);
-	if (!target_root) {
-		fprintf(stderr, "Cannot find any Linux-based OS\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -442,41 +397,12 @@ int main(int argc, char *argv[]) {
 	archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
 		archive_format(state.layer_archive));
 
-	char **mounts = guestfs_inspect_get_mountpoints(state.guestfs, target_root);
-	free(target_root);
-	if (!mounts || !mounts[0]) {
-		exit(EXIT_FAILURE);
-	}
-	int sz = 0;
-	while (mounts[sz += 2]);
-	sz /= 2;
-	qsort(mounts, sz, sizeof(char *) * 2, mounts_cmp);
-	bool mount_succeeded[sz];
-	for (int index = 0; mounts[index]; index += 2) {
-		if (mounts[index][1] != '\0' &&
-				!guestfs_is_dir(state.guestfs, mounts[index])) {
-			res = guestfs_mkdir_p(state.guestfs, mounts[index]);
-			if (res < 0) {
-				fprintf(stderr, "Warning: mountpoint %s setup failed.\n",
-					mounts[index]);
-			}
-		}
-		res = guestfs_mount(state.guestfs, mounts[index + 1], mounts[index]);
-		if (res < 0) {
-			fprintf(stderr, "Warning: mount %s at %s failed.\n",
-				mounts[index + 1], mounts[index]);
-			mount_succeeded[index / 2] = false;
-			continue;
-		}
-		mount_succeeded[index / 2] = true;
-	}
+	cleanup_fstab(&state, succeeded_mounts);
 
-	cleanup_fstab(&state, mounts, mount_succeeded);
-
-	for (int i = 0; mounts[i]; i++) {
-		free(mounts[i]);
+	for (int i = 0; succeeded_mounts[i]; i++) {
+		free(succeeded_mounts[i]);
 	}
-	free(mounts);
+	free(succeeded_mounts);
 
 	if (!state.config.disable_systemd_cleanup) {
 		cleanup_systemd(&state);
