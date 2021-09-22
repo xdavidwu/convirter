@@ -5,6 +5,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -20,11 +21,16 @@ Print file tree from INPUT\n\
 INPUT is in FORMAT:FILE, where FORMAT is either disk-image or oci-archive\n";
 
 static const struct option long_options[] = {
+	{"ignore-c2v",	no_argument,	NULL,	1},
 	{0},
 };
 
+static bool ignore_c2v = false;
+
 static void print_tree(struct cvirt_io_entry *entry, int level) {
-	if (!strcmp(entry->name, ".c2v")) return;
+	if (ignore_c2v && level == 1 && !strcmp(entry->name, ".c2v")) {
+		return;
+	}
 	for (int i = 0; i < level; i++) {
 		putchar('-');
 	}
@@ -53,6 +59,8 @@ int main(int argc, char *argv[]) {
 		case '?':
 			fprintf(stderr, usage, argv[0]);
 			exit(EXIT_FAILURE);
+		case 1:
+			ignore_c2v = true;
 		}
 	}
 
