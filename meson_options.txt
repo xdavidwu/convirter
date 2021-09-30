@@ -1,4 +1,6 @@
 option('build_appliance', type: 'boolean', value: false, description:
   'Build alternative supermin-appliance-based environment for booting VMs from c2v')
+option('build_initramfs_utils', type: 'boolean', value: false, description:
+  'Build tools used in c2v initramfs instead of prebuilts')
 option('e2e_tests', type: 'boolean', value: false, description:
   'Enable meson test for e2e tests')

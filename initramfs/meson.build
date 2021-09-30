@@ -13,7 +13,36 @@ c2v_mkboot = custom_target('c2v-mkboot',
   install_dir: get_option('bindir')
 )
 
+data = ['init', 'udhcpc.script', 'files.list']
+
+if get_option('build_initramfs_utils')
+  utils_dir = meson.current_source_dir() / 'utils'
+
+  custom_target('busybox',
+    command: [utils_dir / 'busybox' / 'build.sh', utils_dir / 'busybox', '@OUTPUT@'],
+    output: 'busybox',
+    install: true,
+    install_dir: initramfs_data_path
+  )
+
+  custom_target('modprobe',
+    command: [utils_dir / 'kmod' / 'build.sh', utils_dir / 'kmod', '@OUTPUT@'],
+    output: 'modprobe',
+    install: true,
+    install_dir: initramfs_data_path
+  )
+
+  custom_target('setuidgid',
+    command: [utils_dir / 'setuidgid' / 'build.sh', utils_dir / 'setuidgid', '@OUTPUT@'],
+    output: 'setuidgid',
+    install: true,
+    install_dir: initramfs_data_path
+  )
+else
+  data += ['busybox', 'modprobe', 'setuidgid']
+endif
+
 install_data(
-  ['busybox', 'modprobe', 'setuidgid', 'init', 'udhcpc.script', 'files.list'],
+  data,
   install_dir: initramfs_data_path
 )
