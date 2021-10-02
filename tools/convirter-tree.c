@@ -5,12 +5,14 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/sysmacros.h>
+#include <time.h>
 #include <unistd.h>
-#include <getopt.h>
 
 #include "../common/guestfs.h"
 
@@ -28,8 +30,67 @@ static const struct option long_options[] = {
 };
 
 static bool ignore_c2v = false;
+static time_t print_time;
 
-static void print_tree(struct cvirt_io_entry *entry, int level) {
+static void print_mode(mode_t mode) {
+	switch (mode & S_IFMT) {
+	case S_IFDIR:
+		putchar('d');
+		break;
+	case S_IFBLK:
+		putchar('b');
+		break;
+	case S_IFCHR:
+		putchar('c');
+		break;
+	case S_IFLNK:
+		putchar('l');
+		break;
+	case S_IFIFO:
+		putchar('p');
+		break;
+	case S_IFREG:
+		putchar('-');
+		break;
+	default:
+		putchar('?');
+		break;
+	}
+
+	char str[10] = {
+		(mode & S_IRUSR) ? 'r' : '-',
+		(mode & S_IWUSR) ? 'w' : '-',
+		(mode & S_ISUID) ? (mode & S_IXUSR) ? 's' : 'S' : (mode & S_IXUSR) ? 'x' : '-',
+		(mode & S_IRGRP) ? 'r' : '-',
+		(mode & S_IWGRP) ? 'w' : '-',
+		(mode & S_ISGID) ? (mode & S_IXGRP) ? 's' : 'S' : (mode & S_IXGRP) ? 'x' : '-',
+		(mode & S_IROTH) ? 'r' : '-',
+		(mode & S_IWOTH) ? 'w' : '-',
+		(mode & S_ISVTX) && S_ISDIR(mode) ? (mode & S_IXUSR) ? 't' : 'T' : (mode & S_IXUSR) ? 'x' : '-',
+	};
+
+	fputs(str, stdout);
+}
+
+static void print_stat(const struct stat *st) {
+	print_mode(st->st_mode);
+	printf(" %d %d ", st->st_uid, st->st_gid);
+	if (S_ISBLK(st->st_mode) || S_ISCHR(st->st_mode)) {
+		printf("%d, %d ", major(st->st_rdev), minor(st->st_rdev));
+	} else {
+		printf("%ld ", st->st_size);
+	}
+	struct tm *tm = gmtime(&st->st_mtime);
+	char time[32];
+	if (print_time - st->st_mtime < 6 * 30 * 24 * 60 * 60) { // 6 months
+		strftime(time, 32, "%b %e %H:%M", tm);
+	} else {
+		strftime(time, 32, "%b %e %Y", tm);
+	}
+	fputs(time, stdout);
+}
+
+static void print_tree(const struct cvirt_io_entry *entry, int level) {
 	if (ignore_c2v && level == 1 && !strcmp(entry->name, ".c2v")) {
 		return;
 	}
@@ -37,6 +98,8 @@ static void print_tree(struct cvirt_io_entry *entry, int level) {
 		putchar('-');
 	}
 	fputs(entry->name, stdout);
+	putchar(' ');
+	print_stat(&entry->stat);
 	if (S_ISREG(entry->stat.st_mode)) {
 		putchar(' ');
 		for (int i = 0; i < 32; i++) {
@@ -116,6 +179,7 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	print_time = time(NULL);
 	print_tree(tree, 0);
 	cvirt_io_tree_destroy(tree);
 
