@@ -98,6 +98,15 @@ int main(int argc, char *argv[]) {
 			cvirt_oci_r_manifest_get_layer_compression(manifest, 0));
 		tree = cvirt_io_tree_from_oci_layer(layer, CVIRT_IO_TREE_CHECKSUM);
 		cvirt_oci_r_layer_destroy(layer);
+		int len = cvirt_oci_r_manifest_get_layers_length(manifest);
+		for (int i = 1; i < len; i++) {
+			struct cvirt_oci_r_layer *layer =
+				cvirt_oci_r_layer_from_archive_blob(fd,
+				cvirt_oci_r_manifest_get_layer_digest(manifest, i),
+				cvirt_oci_r_manifest_get_layer_compression(manifest, i));
+			cvirt_io_tree_oci_apply_layer(tree, layer, CVIRT_IO_TREE_CHECKSUM);
+			cvirt_oci_r_layer_destroy(layer);
+		}
 		cvirt_oci_r_manifest_destroy(manifest);
 		cvirt_oci_r_index_destroy(index);
 		close(fd);
