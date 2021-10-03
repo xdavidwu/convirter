@@ -114,3 +114,54 @@ err_created:
 	return NULL;
 }
 
+guestfs_h *create_qcow2_btrfs_image(const char *path, size_t size) {
+	guestfs_h *guestfs = guestfs_create();
+	if (!guestfs) {
+		fprintf(stderr, "Cannot create libguestfs handle\n");
+		return NULL;
+	}
+	int res = guestfs_disk_create(guestfs, path, "qcow2", size, -1);
+	if (res < 0) {
+		fprintf(stderr, "Failed creating new disk\n");
+		goto err_created;
+	}
+	res = guestfs_add_drive_opts(guestfs, path, GUESTFS_ADD_DRIVE_OPTS_FORMAT, "qcow2", -1);
+	if (res < 0) {
+		fprintf(stderr, "Failed adding new disk\n");
+		goto err_created;
+	}
+	res = guestfs_launch(guestfs);
+	if (res < 0) {
+		fprintf(stderr, "Failed launching guestfs\n");
+		goto err_launched;
+	}
+
+	char *const required_features[] = {
+		"btrfs",
+		NULL,
+	};
+	if (!guestfs_feature_available(guestfs, required_features)) {
+		fprintf(stderr, "Required libguestfs feature \"btrfs\" not available\n");
+		goto err_launched;
+	}
+
+	char *const btrfs_devices[] = {
+		"/dev/sda",
+		NULL,
+	};
+	if (guestfs_mkfs_btrfs(guestfs, btrfs_devices, -1) < 0) {
+		fprintf(stderr, "Failed to mkfs.btrfs\n");
+		goto err_launched;
+	}
+	if (guestfs_mount(guestfs, "/dev/sda", "/") < 0) {
+		fprintf(stderr, "Failed to mount\n");
+		goto err_launched;
+	}
+
+	return guestfs;
+err_launched:
+	guestfs_shutdown(guestfs);
+err_created:
+	guestfs_close(guestfs);
+	return NULL;
+}

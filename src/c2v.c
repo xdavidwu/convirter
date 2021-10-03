@@ -15,6 +15,8 @@
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 
+#include "../common/guestfs.h"
+
 static const int bufsz = 4000 * 1024;
 
 #define C2V_DIR	"/.c2v"
@@ -452,42 +454,10 @@ int main(int argc, char *argv[]) {
 	if (argc != 3) {
 		exit(EXIT_FAILURE);
 	}
-	guestfs_h *guestfs = guestfs_create();
+	guestfs_h *guestfs = create_qcow2_btrfs_image(argv[2], 4LL * 1024 * 1024 * 1024);
 	if (!guestfs) {
 		exit(EXIT_FAILURE);
 	}
-	int res = guestfs_disk_create(guestfs, argv[2], "qcow2", 4LL * 1024 * 1024 * 1024, -1);
-	if (res < 0) {
-		fprintf(stderr, "Failed creating new disk\n");
-		exit(EXIT_FAILURE);
-	}
-	res = guestfs_add_drive_opts(guestfs, argv[2], GUESTFS_ADD_DRIVE_OPTS_FORMAT, "qcow2", -1);
-	if (res < 0) {
-		fprintf(stderr, "Failed adding new disk\n");
-		exit(EXIT_FAILURE);
-	}
-	res = guestfs_launch(guestfs);
-	if (res < 0) {
-		fprintf(stderr, "Failed launching guestfs\n");
-		exit(EXIT_FAILURE);
-	}
-
-	char *const required_features[] = {
-		"btrfs",
-		NULL,
-	};
-	if (!guestfs_feature_available(guestfs, required_features)) {
-		fprintf(stderr, "Required libguestfs feature \"btrfs\" not available\n");
-		exit(EXIT_FAILURE);
-	}
-
-	char *const btrfs_devices[] = {
-		"/dev/sda",
-		NULL,
-	};
-	assert(guestfs_mkfs_btrfs(guestfs, btrfs_devices, -1) >= 0);
-	assert(guestfs_mount(guestfs, "/dev/sda", "/") >= 0);
-
 	assert(guestfs_umask(guestfs, 0) >= 0);
 	
 	assert(guestfs_mkdir_mode(guestfs, C2V_DIR, 0500) >= 0);
@@ -495,6 +465,7 @@ int main(int argc, char *argv[]) {
 	assert(guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/",
 		C2V_LAYERS "/base",
 		GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
+
 
 	int fd = open(argv[1], O_RDONLY | O_CLOEXEC);
 	assert(fd != -1);

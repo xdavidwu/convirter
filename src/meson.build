@@ -10,6 +10,7 @@ v2c = executable(
 c2v = executable(
   'c2v',
   'c2v.c',
+  '../common/guestfs.c',
   dependencies: [libguestfs, libarchive],
   link_with: [libconvirter],
   include_directories: [libconvirter_include]
