@@ -1,6 +1,7 @@
 #include <archive.h>
 #include <archive_entry.h>
 #include <assert.h>
+#include <convirter/io/entry.h>
 #include <convirter/oci-r/config.h>
 #include <convirter/oci-r/index.h>
 #include <convirter/oci-r/layer.h>
@@ -450,11 +451,53 @@ static int generate_init_script(guestfs_h *guestfs,
 	return 0;
 }
 
+static int block_sz = 4096;
+
+static size_t estimate_disk_usage(const struct cvirt_io_entry *entry) {
+	if (S_ISREG(entry->stat.st_mode)) {
+		return (entry->stat.st_size + block_sz - 1) / block_sz * block_sz;
+	} else if (S_ISDIR(entry->stat.st_mode)) {
+		size_t total = 0;
+		for (int i = 0; i < entry->children_len; i++) {
+			total += estimate_disk_usage(&entry->children[i]);
+		}
+		return total;
+	}
+	return 0;
+}
+
 int main(int argc, char *argv[]) {
 	if (argc != 3) {
 		exit(EXIT_FAILURE);
 	}
-	guestfs_h *guestfs = create_qcow2_btrfs_image(argv[2], 4LL * 1024 * 1024 * 1024);
+
+	int fd = open(argv[1], O_RDONLY | O_CLOEXEC);
+	assert(fd != -1);
+	struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(fd);
+	const char *manifest_digest = cvirt_oci_r_index_get_native_manifest_digest(index);
+	struct cvirt_oci_r_manifest *manifest = cvirt_oci_r_manifest_from_archive_blob(fd, manifest_digest);
+	const char *config_digest = cvirt_oci_r_manifest_get_config_digest(manifest);
+	int len = cvirt_oci_r_manifest_get_layers_length(manifest);
+
+	struct cvirt_io_entry *layer_trees[len];
+
+	struct cvirt_oci_r_layer *layer = cvirt_oci_r_layer_from_archive_blob(
+		fd, cvirt_oci_r_manifest_get_layer_digest(manifest, 0),
+		cvirt_oci_r_manifest_get_layer_compression(manifest, 0));
+	layer_trees[0] = cvirt_io_tree_from_oci_layer(layer, 0);
+	size_t needed = estimate_disk_usage(layer_trees[0]);
+	cvirt_oci_r_layer_destroy(layer);
+	for (int i = 1; i < len; i++) {
+		const char *layer_digest = cvirt_oci_r_manifest_get_layer_digest(manifest, i);
+		struct cvirt_oci_r_layer *layer =
+			cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
+			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
+		layer_trees[i] = cvirt_io_tree_from_oci_layer(layer, 0);
+		needed += estimate_disk_usage(layer_trees[i]);
+		cvirt_oci_r_layer_destroy(layer);
+	}
+
+	guestfs_h *guestfs = create_qcow2_btrfs_image(argv[2], needed * 2);
 	if (!guestfs) {
 		exit(EXIT_FAILURE);
 	}
@@ -466,21 +509,13 @@ int main(int argc, char *argv[]) {
 		C2V_LAYERS "/base",
 		GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
 
-
-	int fd = open(argv[1], O_RDONLY | O_CLOEXEC);
-	assert(fd != -1);
-	struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(fd);
-	const char *manifest_digest = cvirt_oci_r_index_get_native_manifest_digest(index);
-	struct cvirt_oci_r_manifest *manifest = cvirt_oci_r_manifest_from_archive_blob(fd, manifest_digest);
-	const char *config_digest = cvirt_oci_r_manifest_get_config_digest(manifest);
-	int len = cvirt_oci_r_manifest_get_layers_length(manifest);
 	for (int i = 0; i < len; i++) {
 		const char *layer_digest = cvirt_oci_r_manifest_get_layer_digest(manifest, i);
-
-		// first pass: whiteouts
 		struct cvirt_oci_r_layer *layer =
 			cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
 			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
+
+		// first pass: whiteouts
 		struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
 		apply_whiteouts(guestfs, archive);
 
@@ -489,6 +524,8 @@ int main(int argc, char *argv[]) {
 		archive = cvirt_oci_r_layer_get_libarchive(layer);
 		dump_layer(guestfs, archive);
 		cvirt_oci_r_layer_destroy(layer);
+
+		cvirt_io_tree_destroy(layer_trees[i]);
 
 		// snapshot after each layer
 		char *snapshot_dest = calloc(strlen(layer_digest) + 14, sizeof(char));
