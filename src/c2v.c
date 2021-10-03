@@ -466,6 +466,24 @@ static size_t estimate_disk_usage(const struct cvirt_io_entry *entry) {
 	return 0;
 }
 
+static void restore_mtime(guestfs_h *guestfs, struct cvirt_io_entry *entry,
+		const char *path) {
+	for (int i = 0; i < entry->children_len; i++) {
+		if (!S_ISDIR(entry->children[i].stat.st_mode)) {
+			continue;
+		}
+		char mpath[strlen(path) + strlen(entry->children[i].name) + 2];
+		strcpy(mpath, path);
+		strcat(mpath, entry->children[i].name);
+		strcat(mpath, "/");
+		restore_mtime(guestfs, &entry->children[i], mpath);
+	}
+
+	guestfs_utimens(guestfs, path, entry->stat.st_atim.tv_sec,
+		entry->stat.st_atim.tv_nsec, entry->stat.st_mtim.tv_sec,
+		entry->stat.st_mtim.tv_nsec);
+}
+
 int main(int argc, char *argv[]) {
 	if (argc != 3) {
 		exit(EXIT_FAILURE);
@@ -524,6 +542,8 @@ int main(int argc, char *argv[]) {
 		archive = cvirt_oci_r_layer_get_libarchive(layer);
 		dump_layer(guestfs, archive);
 		cvirt_oci_r_layer_destroy(layer);
+
+		restore_mtime(guestfs, layer_trees[i], "/");
 
 		cvirt_io_tree_destroy(layer_trees[i]);
 
