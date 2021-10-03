@@ -70,8 +70,19 @@ module_files_for_initramfs() {
 	# dkms
 	[ -d "lib/modules/$KERNEL_VERSION/updates" ] && find "lib/modules/$KERNEL_VERSION/updates"
 	echo "lib/modules/$KERNEL_VERSION/kernel"
-	for sub in arch block crypto drivers fs kernel lib; do
+	for sub in arch block crypto fs kernel lib; do
 		[ -d "lib/modules/$KERNEL_VERSION/kernel/$sub" ] && find "lib/modules/$KERNEL_VERSION/kernel/$sub"
+	done
+	echo "lib/modules/$KERNEL_VERSION/kernel/drivers"
+	for sub in $(find "/lib/modules/$KERNEL_VERSION/kernel/drivers" -maxdepth 1 -type d \
+			-not -name 'net' -not -name 'video' -not -name 'phy' \
+			-not -name 'media' -not -name 'nfc' -not -name 'infiniband' \
+			-not -name 'leds' -not -name 'input' -not -name 'hwmon' \
+			-not -name 'hid' -not -name 'gpu' -not -name 'gnss' \
+			-not -name 'char' -not -name 'bluetooth' \
+			-not -name 'accessibility' -not -name 'auxdisplay' \
+			-printf '%f\n'); do
+		[ -d "lib/modules/$KERNEL_VERSION/kernel/drivers/$sub" ] && find "lib/modules/$KERNEL_VERSION/kernel/drivers/$sub"
 	done
 	cd "$OLDPWD"
 }
