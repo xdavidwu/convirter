@@ -20,7 +20,7 @@ static void copy_stat_from_guestfs_statns(struct cvirt_io_inode *inode,
 	inode->stat.st_dev = statns->st_dev;
 	inode->stat.st_ino = statns->st_ino;
 	inode->stat.st_mode = statns->st_mode;
-	inode->stat.st_nlink = statns->st_nlink;
+	inode->stat.st_nlink = 1;
 	inode->stat.st_uid = statns->st_uid;
 	inode->stat.st_gid = statns->st_gid;
 	inode->stat.st_rdev = statns->st_rdev;
@@ -263,7 +263,7 @@ static void copy_stat(struct stat *dest, const struct stat *src) {
 	dest->st_dev = src->st_dev;
 	dest->st_ino = src->st_ino;
 	dest->st_mode = src->st_mode;
-	dest->st_nlink = src->st_nlink;
+	dest->st_nlink = 1;
 	dest->st_uid = src->st_uid;
 	dest->st_gid = src->st_gid;
 	dest->st_rdev = src->st_rdev;
@@ -514,24 +514,29 @@ int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root,
 
 }
 
+static void inode_unref(struct cvirt_io_inode *inode) {
+	if (!--inode->stat.st_nlink) {
+		for (int i = 0; i < inode->xattrs_len; i++) {
+			free(inode->xattrs[i].name);
+			free(inode->xattrs[i].value);
+		}
+		free(inode->xattrs);
+
+		if (S_ISDIR(inode->stat.st_mode)) {
+			for (int i = 0; i < inode->children_len; i++) {
+				entry_cleanup(&inode->children[i]);
+			}
+			free(inode->children);
+		} else if (S_ISLNK(inode->stat.st_mode)) {
+			free(inode->target);
+		}
+		free(inode);
+	}
+}
+
 static void entry_cleanup(struct cvirt_io_entry *entry) {
 	free(entry->name);
-	struct cvirt_io_inode *inode = entry->inode;
-	for (int i = 0; i < inode->xattrs_len; i++) {
-		free(inode->xattrs[i].name);
-		free(inode->xattrs[i].value);
-	}
-	free(inode->xattrs);
-
-	if (S_ISDIR(inode->stat.st_mode)) {
-		for (int i = 0; i < inode->children_len; i++) {
-			entry_cleanup(&inode->children[i]);
-		}
-		free(inode->children);
-	} else if (S_ISLNK(inode->stat.st_mode)) {
-		free(inode->target);
-	}
-	free(inode);
+	inode_unref(entry->inode);
 }
 
 void cvirt_io_tree_destroy(struct cvirt_io_entry *entry) {
