@@ -359,14 +359,12 @@ static int apply_layer_addition(struct cvirt_io_entry *root,
 		struct cvirt_io_entry *entry = find_entry(root, path, true);
 		free(path);
 
-		const struct stat *stat = archive_entry_stat(archive_entry);
-
-		if ((stat->st_mode & S_IFMT) == 0) { // hardlink
-			char *hardlink = normalize_tar_entry_name(
-				archive_entry_hardlink(archive_entry));
-			struct cvirt_io_entry *target = find_entry(root, hardlink, false);
+		const char *hardlink = archive_entry_hardlink(archive_entry);
+		if (hardlink) { // hardlink
+			char *linkpath = normalize_tar_entry_name(hardlink);
+			struct cvirt_io_entry *target = find_entry(root, linkpath, false);
 			assert(target);
-			free(hardlink);
+			free(linkpath);
 			entry->inode = target->inode;
 			entry->inode->stat.st_nlink++;
 			continue;
@@ -380,7 +378,7 @@ static int apply_layer_addition(struct cvirt_io_entry *root,
 		}
 
 		struct cvirt_io_inode *inode = entry->inode;
-		copy_stat(&inode->stat, stat);
+		copy_stat(&inode->stat, archive_entry_stat(archive_entry));
 
 		set_xattr_from_libarchive(inode, archive_entry);
 
