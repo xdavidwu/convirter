@@ -99,18 +99,18 @@ static void print_tree(const struct cvirt_io_entry *entry, int level) {
 	}
 	fputs(entry->name, stdout);
 	putchar(' ');
-	print_stat(&entry->stat);
-	if (S_ISREG(entry->stat.st_mode)) {
+	print_stat(&entry->inode->stat);
+	if (S_ISREG(entry->inode->stat.st_mode)) {
 		putchar(' ');
 		for (int i = 0; i < 32; i++) {
-			printf("%02x", entry->sha256sum[i]);
+			printf("%02x", entry->inode->sha256sum[i]);
 		}
 	}
 	putchar('\n');
 
-	if (S_ISDIR(entry->stat.st_mode)) {
-		for (int i = 0; i < entry->children_len; i++) {
-			print_tree(&entry->children[i], level + 1);
+	if (S_ISDIR(entry->inode->stat.st_mode)) {
+		for (int i = 0; i < entry->inode->children_len; i++) {
+			print_tree(&entry->inode->children[i], level + 1);
 		}
 	}
 }

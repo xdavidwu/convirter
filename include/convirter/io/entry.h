@@ -8,8 +8,7 @@
 
 #include <convirter/oci-r/layer.h>
 
-struct cvirt_io_entry {
-	char *name;
+struct cvirt_io_inode {
 	struct stat stat;
 
 	struct cvirt_io_xattr *xattrs;
@@ -25,6 +24,12 @@ struct cvirt_io_entry {
 		};
 		char *target; // S_IFLNK
 	};
+};
+
+struct cvirt_io_entry {
+	char *name;
+
+	struct cvirt_io_inode *inode;
 };
 
 enum cvirt_io_tree_flags {

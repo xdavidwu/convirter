@@ -15,43 +15,43 @@
 #include "io/entry.h"
 #include "xmem.h"
 
-static void copy_stat_from_guestfs_statns(struct cvirt_io_entry *entry,
+static void copy_stat_from_guestfs_statns(struct cvirt_io_inode *inode,
 		struct guestfs_statns *statns) {
-	entry->stat.st_dev = statns->st_dev;
-	entry->stat.st_ino = statns->st_ino;
-	entry->stat.st_mode = statns->st_mode;
-	entry->stat.st_nlink = statns->st_nlink;
-	entry->stat.st_uid = statns->st_uid;
-	entry->stat.st_gid = statns->st_gid;
-	entry->stat.st_rdev = statns->st_rdev;
-	entry->stat.st_size = statns->st_size;
-	entry->stat.st_blksize = statns->st_blksize;
-	entry->stat.st_blocks = statns->st_blocks;
-	entry->stat.st_atim.tv_sec = statns->st_atime_sec;
-	entry->stat.st_atim.tv_nsec = statns->st_atime_nsec;
-	entry->stat.st_mtim.tv_sec = statns->st_mtime_sec;
-	entry->stat.st_mtim.tv_nsec = statns->st_mtime_nsec;
-	entry->stat.st_ctim.tv_sec = statns->st_ctime_sec;
-	entry->stat.st_ctim.tv_nsec = statns->st_ctime_nsec;
+	inode->stat.st_dev = statns->st_dev;
+	inode->stat.st_ino = statns->st_ino;
+	inode->stat.st_mode = statns->st_mode;
+	inode->stat.st_nlink = statns->st_nlink;
+	inode->stat.st_uid = statns->st_uid;
+	inode->stat.st_gid = statns->st_gid;
+	inode->stat.st_rdev = statns->st_rdev;
+	inode->stat.st_size = statns->st_size;
+	inode->stat.st_blksize = statns->st_blksize;
+	inode->stat.st_blocks = statns->st_blocks;
+	inode->stat.st_atim.tv_sec = statns->st_atime_sec;
+	inode->stat.st_atim.tv_nsec = statns->st_atime_nsec;
+	inode->stat.st_mtim.tv_sec = statns->st_mtime_sec;
+	inode->stat.st_mtim.tv_nsec = statns->st_mtime_nsec;
+	inode->stat.st_ctim.tv_sec = statns->st_ctime_sec;
+	inode->stat.st_ctim.tv_nsec = statns->st_ctime_nsec;
 }
 
-static void set_xattrs_from_guestfs_xattr_array(struct cvirt_io_entry *entry,
+static void set_xattrs_from_guestfs_xattr_array(struct cvirt_io_inode *inode,
 		struct guestfs_xattr *xattrs, int count) {
 	if (!count) {
 		return;
 	}
-	entry->xattrs = calloc(count, sizeof(struct cvirt_io_xattr));
-	assert(entry->xattrs);
-	entry->xattrs_capacity = count;
-	entry->xattrs_len = count;
+	inode->xattrs = calloc(count, sizeof(struct cvirt_io_xattr));
+	assert(inode->xattrs);
+	inode->xattrs_capacity = count;
+	inode->xattrs_len = count;
 	for (int i = 0; i < count; i++) {
-		entry->xattrs[i].name = strdup(xattrs[i].attrname);
-		assert(entry->xattrs[i].name);
-		entry->xattrs[i].value = calloc(xattrs[i].attrval_len, sizeof(uint8_t));
-		assert(entry->xattrs[i].value);
-		memcpy(entry->xattrs[i].value, xattrs[i].attrval,
+		inode->xattrs[i].name = strdup(xattrs[i].attrname);
+		assert(inode->xattrs[i].name);
+		inode->xattrs[i].value = calloc(xattrs[i].attrval_len, sizeof(uint8_t));
+		assert(inode->xattrs[i].value);
+		memcpy(inode->xattrs[i].value, xattrs[i].attrval,
 			xattrs[i].attrval_len);
-		entry->xattrs[i].len = xattrs[i].attrval_len;
+		inode->xattrs[i].len = xattrs[i].attrval_len;
 	}
 }
 
@@ -89,13 +89,14 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 		max_length = (max_length > l) ? max_length : l;
 		i++;
 	}
-	entry->children = calloc(i, sizeof(struct cvirt_io_entry));
-	assert(entry->children);
-	entry->children_capacity = i;
-	entry->children_len = i;
+	struct cvirt_io_inode *inode = entry->inode;
+	inode->children = calloc(i, sizeof(struct cvirt_io_entry));
+	assert(inode->children);
+	inode->children_capacity = i;
+	inode->children_len = i;
 	struct guestfs_statns_list *stats = guestfs_lstatnslist(guestfs, path, ls);
 	assert(stats);
-	assert(stats->len == entry->children_len);
+	assert(stats->len == inode->children_len);
 
 	struct guestfs_xattr_list *xattrs = guestfs_lxattrlist(guestfs, path, ls);
 	assert(xattrs);
@@ -106,30 +107,31 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 	strcpy(abs_path, path);
 	strcat(abs_path, "/");
 	assert(abs_path);
-	for (int i = 0; i < entry->children_len; i++) {
-		entry->children[i].name = ls[i];
-		copy_stat_from_guestfs_statns(&entry->children[i], &stats->val[i]);
+	for (int i = 0; i < inode->children_len; i++) {
+		inode->children[i].name = ls[i];
+		inode->children[i].inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
+		copy_stat_from_guestfs_statns(inode->children[i].inode, &stats->val[i]);
 
 		strcpy(&abs_path[common_len + 1], ls[i]);
 
 		assert(xattrs_idx < xattrs->len);
 		int l = atoi(xattrs->val[xattrs_idx].attrval);
 		xattrs_idx++;
-		set_xattrs_from_guestfs_xattr_array(&entry->children[i], &xattrs->val[xattrs_idx], l);
+		set_xattrs_from_guestfs_xattr_array(inode->children[i].inode, &xattrs->val[xattrs_idx], l);
 		xattrs_idx += l;
 
-		if (S_ISDIR(entry->children[i].stat.st_mode)) {
-			guestfs_dir_fill_children(&entry->children[i], guestfs,
+		if (S_ISDIR(inode->children[i].inode->stat.st_mode)) {
+			guestfs_dir_fill_children(&inode->children[i], guestfs,
 				abs_path, flags, checksum_ctx);
-		} else if (S_ISLNK(entry->children[i].stat.st_mode)) {
+		} else if (S_ISLNK(inode->children[i].inode->stat.st_mode)) {
 			char *link = guestfs_readlink(guestfs, abs_path);
 			assert(link);
-			entry->children[i].target = link;
+			inode->children[i].inode->target = link;
 		} else if ((flags & CVIRT_IO_TREE_CHECKSUM) &&
-				S_ISREG(entry->children[i].stat.st_mode)) {
-			checksum_from_guestfs(entry->children[i].sha256sum,
+				S_ISREG(inode->children[i].inode->stat.st_mode)) {
+			checksum_from_guestfs(inode->children[i].inode->sha256sum,
 				guestfs, abs_path,
-				entry->children[i].stat.st_size, checksum_ctx);
+				inode->children[i].inode->stat.st_size, checksum_ctx);
 		}
 	}
 	guestfs_free_statns_list(stats);
@@ -153,15 +155,16 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 
 	result->name = strdup("/");
 	assert(result->name);
+	result->inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
 
 	struct guestfs_statns *stat = guestfs_lstatns(guestfs, "/");
 	assert(stat);
-	copy_stat_from_guestfs_statns(result, stat);
+	copy_stat_from_guestfs_statns(result->inode, stat);
 	guestfs_free_statns(stat);
 
 	struct guestfs_xattr_list *xattrs = guestfs_lgetxattrs(guestfs, "/");
 	assert(xattrs);
-	set_xattrs_from_guestfs_xattr_array(result, xattrs->val, xattrs->len);
+	set_xattrs_from_guestfs_xattr_array(result->inode, xattrs->val, xattrs->len);
 	guestfs_free_xattr_list(xattrs);
 
 	guestfs_dir_fill_children(result, guestfs, "/", flags, checksum_ctx);
@@ -198,21 +201,22 @@ static int path_first_part_len(const char *path) {
 	return c;
 }
 
-static struct cvirt_io_entry *allocate_child(struct cvirt_io_entry *entry,
+static struct cvirt_io_entry *allocate_child(struct cvirt_io_inode *inode,
 		const char *name, int name_len) {
-	if (entry->children_len < entry->children_capacity) {
+	if (inode->children_len < inode->children_capacity) {
 		goto prepare_entry;
 	}
 
-	const unsigned int sz = entry->children ? entry->children_capacity * 2 : 8;
-	entry->children = realloc(entry->children, sz * sizeof(struct cvirt_io_entry));
-	memset(&entry->children[entry->children_capacity], 0, (sz - entry->children_capacity) * sizeof(struct cvirt_io_entry));
-	entry->children_capacity = sz;
+	const unsigned int sz = inode->children ? inode->children_capacity * 2 : 8;
+	inode->children = realloc(inode->children, sz * sizeof(struct cvirt_io_entry));
+	memset(&inode->children[inode->children_capacity], 0, (sz - inode->children_capacity) * sizeof(struct cvirt_io_entry));
+	inode->children_capacity = sz;
 
 prepare_entry:
-	entry->children[entry->children_len].name = strndup(name, name_len);
-	assert(entry->children[entry->children_len].name);
-	return &entry->children[entry->children_len++];
+	inode->children[inode->children_len].name = strndup(name, name_len);
+	inode->children[inode->children_len].inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
+	assert(inode->children[inode->children_len].name);
+	return &inode->children[inode->children_len++];
 }
 
 static struct cvirt_io_entry *find_entry(struct cvirt_io_entry *entry,
@@ -225,19 +229,20 @@ static struct cvirt_io_entry *find_entry(struct cvirt_io_entry *entry,
 		return entry;
 	}
 
-	for (int i = 0; i < entry->children_len; i++) {
-		if (strlen(entry->children[i].name) == first_part_len &&
-				!strncmp(entry->children[i].name, name, first_part_len)) {
+	struct cvirt_io_inode *inode = entry->inode;
+	for (int i = 0; i < inode->children_len; i++) {
+		if (strlen(inode->children[i].name) == first_part_len &&
+				!strncmp(inode->children[i].name, name, first_part_len)) {
 			if (last) {
-				return &entry->children[i];
+				return &inode->children[i];
 			}
-			if (!S_ISDIR(entry->stat.st_mode)) {
+			if (!S_ISDIR(inode->stat.st_mode)) {
 				// TODO try to follow symlinks?
 				assert("Parent is not a directory" == NULL);
 			}
 
 			struct cvirt_io_entry *res = find_entry(
-				&entry->children[i], &name[first_part_len + 1],
+				&inode->children[i], &name[first_part_len + 1],
 				create);
 			if (res) {
 				return res;
@@ -251,7 +256,7 @@ static struct cvirt_io_entry *find_entry(struct cvirt_io_entry *entry,
 
 	// new entry
 	assert(last && "Missing parent directory entries.");
-	return allocate_child(entry, name, first_part_len);
+	return allocate_child(inode, name, first_part_len);
 }
 
 static void copy_stat(struct stat *dest, const struct stat *src) {
@@ -273,17 +278,17 @@ static void copy_stat(struct stat *dest, const struct stat *src) {
 	dest->st_ctim.tv_nsec = src->st_ctim.tv_nsec;
 }
 
-static void set_xattr_from_libarchive(struct cvirt_io_entry *entry,
+static void set_xattr_from_libarchive(struct cvirt_io_inode *inode,
 		struct archive_entry *archive_entry) {
 	int count = archive_entry_xattr_count(archive_entry);
 	if (!count) {
 		return;
 	}
 
-	entry->xattrs = calloc(count, sizeof(struct cvirt_io_xattr));
-	assert(entry->xattrs);
-	entry->xattrs_len = count;
-	entry->xattrs_capacity = count;
+	inode->xattrs = calloc(count, sizeof(struct cvirt_io_xattr));
+	assert(inode->xattrs);
+	inode->xattrs_len = count;
+	inode->xattrs_capacity = count;
 	archive_entry_xattr_reset(archive_entry);
 
 	const char *name;
@@ -292,12 +297,12 @@ static void set_xattr_from_libarchive(struct cvirt_io_entry *entry,
 
 	for (int i = 0; i < count; i++) {
 		archive_entry_xattr_next(archive_entry, &name, &val, &sz);
-		entry->xattrs[i].name = strdup(name);
-		assert(entry->xattrs[i].name);
-		entry->xattrs[i].value = calloc(sz, sizeof(uint8_t));
-		assert(entry->xattrs[i].value);
-		memcpy(entry->xattrs[i].value, val, sz);
-		entry->xattrs[i].len = sz;
+		inode->xattrs[i].name = strdup(name);
+		assert(inode->xattrs[i].name);
+		inode->xattrs[i].value = calloc(sz, sizeof(uint8_t));
+		assert(inode->xattrs[i].value);
+		memcpy(inode->xattrs[i].value, val, sz);
+		inode->xattrs[i].len = sz;
 	}
 }
 
@@ -327,7 +332,7 @@ static void checksum_from_archive(uint8_t *dest, struct archive *archive,
 	gcry_md_reset(ctx->gcrypt_handle);
 }
 
-static void entry_deep_copy(struct cvirt_io_entry *dest, struct cvirt_io_entry *src) {
+static void inode_deep_copy(struct cvirt_io_inode *dest, struct cvirt_io_inode *src) {
 	copy_stat(&dest->stat, &src->stat);
 
 	dest->xattrs = calloc(src->xattrs_len, sizeof(struct cvirt_io_xattr));
@@ -376,30 +381,31 @@ static int apply_layer_addition(struct cvirt_io_entry *root,
 
 		char *path = normalize_tar_entry_name(orig_name);
 		struct cvirt_io_entry *entry = find_entry(root, path, true);
+		struct cvirt_io_inode *inode = entry->inode;
 		free(path);
 
 		const struct stat *stat = archive_entry_stat(archive_entry);
-		copy_stat(&entry->stat, stat);
+		copy_stat(&inode->stat, stat);
 
-		if ((entry->stat.st_mode & S_IFMT) == 0) { // hardlink
+		if ((inode->stat.st_mode & S_IFMT) == 0) { // hardlink
 			char *hardlink = normalize_tar_entry_name(
 				archive_entry_hardlink(archive_entry));
 			struct cvirt_io_entry *target = find_entry(root, hardlink, false);
 			assert(target);
 			free(hardlink);
-			entry_deep_copy(entry, target);
+			inode_deep_copy(inode, target->inode);
 			continue;
 		}
 
-		set_xattr_from_libarchive(entry, archive_entry);
+		set_xattr_from_libarchive(inode, archive_entry);
 
-		if (S_ISLNK(entry->stat.st_mode)) {
+		if (S_ISLNK(inode->stat.st_mode)) {
 			char *link = strdup(archive_entry_symlink(archive_entry));
 			assert(link);
-			entry->target = link;
+			inode->target = link;
 		} else if ((flags & CVIRT_IO_TREE_CHECKSUM) &&
-				S_ISREG(entry->stat.st_mode)) {
-			checksum_from_archive(entry->sha256sum, archive,
+				S_ISREG(inode->stat.st_mode)) {
+			checksum_from_archive(inode->sha256sum, archive,
 				archive_entry_size(archive_entry), checksum_ctx);
 		}
 	}
@@ -431,16 +437,16 @@ static int apply_layer_substration(struct cvirt_io_entry *root,
 		char *dir_dup = normalize_tar_entry_name(orig_name);
 		const char *dir = dirname(dir_dup);
 		struct cvirt_io_entry *dir_entry = find_entry(root, dir, false);
-		if (!dir_entry || !S_ISDIR(dir_entry->stat.st_mode)) {
+		if (!dir_entry || !S_ISDIR(dir_entry->inode->stat.st_mode)) {
 			free(basename_dup);
 			free(dir_dup);
 			continue;
 		}
 		if (!strcmp(base, ".wh..wh..opq")) {
-			for (int i = 0; i < dir_entry->children_len; i++) {
-				entry_cleanup(&dir_entry->children[i]);
+			for (int i = 0; i < dir_entry->inode->children_len; i++) {
+				entry_cleanup(&dir_entry->inode->children[i]);
 			}
-			dir_entry->children_len = 0;
+			dir_entry->inode->children_len = 0;
 		} else {
 			const char *realname = &base[4];
 			if (!*realname) {
@@ -449,12 +455,12 @@ static int apply_layer_substration(struct cvirt_io_entry *root,
 				continue;
 			}
 
-			for (int i = 0; i < dir_entry->children_len; i++) {
-				if (!strcmp(realname, dir_entry->children[i].name)) {
-					entry_cleanup(&dir_entry->children[i]);
-					memmove(&dir_entry->children[i],
-						&dir_entry->children[i + 1],
-						(dir_entry->children_len - 1 - i) *
+			for (int i = 0; i < dir_entry->inode->children_len; i++) {
+				if (!strcmp(realname, dir_entry->inode->children[i].name)) {
+					entry_cleanup(&dir_entry->inode->children[i]);
+					memmove(&dir_entry->inode->children[i],
+						&dir_entry->inode->children[i + 1],
+						(dir_entry->inode->children_len - 1 - i) *
 						sizeof(struct cvirt_io_entry));
 					break;
 				}
@@ -484,8 +490,9 @@ struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *la
 
 	result->name = strdup("/");
 	assert(result->name);
+	result->inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
 
-	result->stat.st_mode = S_IFDIR | 0755;
+	result->inode->stat.st_mode = S_IFDIR | 0755;
 
 	int res = apply_layer_addition(result, layer, flags);
 	if (res < 0) {
@@ -509,20 +516,22 @@ int cvirt_io_tree_oci_apply_layer(struct cvirt_io_entry *root,
 
 static void entry_cleanup(struct cvirt_io_entry *entry) {
 	free(entry->name);
-	for (int i = 0; i < entry->xattrs_len; i++) {
-		free(entry->xattrs[i].name);
-		free(entry->xattrs[i].value);
+	struct cvirt_io_inode *inode = entry->inode;
+	for (int i = 0; i < inode->xattrs_len; i++) {
+		free(inode->xattrs[i].name);
+		free(inode->xattrs[i].value);
 	}
-	free(entry->xattrs);
+	free(inode->xattrs);
 
-	if (S_ISDIR(entry->stat.st_mode)) {
-		for (int i = 0; i < entry->children_len; i++) {
-			entry_cleanup(&entry->children[i]);
+	if (S_ISDIR(inode->stat.st_mode)) {
+		for (int i = 0; i < inode->children_len; i++) {
+			entry_cleanup(&inode->children[i]);
 		}
-		free(entry->children);
-	} else if (S_ISLNK(entry->stat.st_mode)) {
-		free(entry->target);
+		free(inode->children);
+	} else if (S_ISLNK(inode->stat.st_mode)) {
+		free(inode->target);
 	}
+	free(inode);
 }
 
 void cvirt_io_tree_destroy(struct cvirt_io_entry *entry) {

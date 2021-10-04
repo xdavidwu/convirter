@@ -454,12 +454,12 @@ static int generate_init_script(guestfs_h *guestfs,
 static int block_sz = 4096;
 
 static size_t estimate_disk_usage(const struct cvirt_io_entry *entry) {
-	if (S_ISREG(entry->stat.st_mode)) {
-		return (entry->stat.st_size + block_sz - 1) / block_sz * block_sz;
-	} else if (S_ISDIR(entry->stat.st_mode)) {
+	if (S_ISREG(entry->inode->stat.st_mode)) {
+		return (entry->inode->stat.st_size + block_sz - 1) / block_sz * block_sz;
+	} else if (S_ISDIR(entry->inode->stat.st_mode)) {
 		size_t total = 0;
-		for (int i = 0; i < entry->children_len; i++) {
-			total += estimate_disk_usage(&entry->children[i]);
+		for (int i = 0; i < entry->inode->children_len; i++) {
+			total += estimate_disk_usage(&entry->inode->children[i]);
 		}
 		return total;
 	}
@@ -468,20 +468,20 @@ static size_t estimate_disk_usage(const struct cvirt_io_entry *entry) {
 
 static void restore_mtime(guestfs_h *guestfs, struct cvirt_io_entry *entry,
 		const char *path) {
-	for (int i = 0; i < entry->children_len; i++) {
-		if (!S_ISDIR(entry->children[i].stat.st_mode)) {
+	for (int i = 0; i < entry->inode->children_len; i++) {
+		if (!S_ISDIR(entry->inode->children[i].inode->stat.st_mode)) {
 			continue;
 		}
-		char mpath[strlen(path) + strlen(entry->children[i].name) + 2];
+		char mpath[strlen(path) + strlen(entry->inode->children[i].name) + 2];
 		strcpy(mpath, path);
-		strcat(mpath, entry->children[i].name);
+		strcat(mpath, entry->inode->children[i].name);
 		strcat(mpath, "/");
-		restore_mtime(guestfs, &entry->children[i], mpath);
+		restore_mtime(guestfs, &entry->inode->children[i], mpath);
 	}
 
-	guestfs_utimens(guestfs, path, entry->stat.st_atim.tv_sec,
-		entry->stat.st_atim.tv_nsec, entry->stat.st_mtim.tv_sec,
-		entry->stat.st_mtim.tv_nsec);
+	guestfs_utimens(guestfs, path, entry->inode->stat.st_atim.tv_sec,
+		entry->inode->stat.st_atim.tv_nsec, entry->inode->stat.st_mtim.tv_sec,
+		entry->inode->stat.st_mtim.tv_nsec);
 }
 
 int main(int argc, char *argv[]) {
