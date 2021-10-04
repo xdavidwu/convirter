@@ -208,12 +208,27 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 		}
 		free(basename_dup);
 
-		const struct stat *stat = archive_entry_stat(entry);
-		const char *link;
 		char *abs_path = calloc(2 + strlen(path), sizeof(char));
 		assert(abs_path);
 		abs_path[0] = '/';
 		strcpy(&abs_path[1], path);
+
+		const char *hardlink = archive_entry_hardlink(entry);
+		if (hardlink) {
+			char *abs_target = calloc(2 + strlen(hardlink),
+				sizeof(char));
+			abs_target[0] = '/';
+			strcpy(&abs_target[1], hardlink);
+			int res = guestfs_ln(guestfs, abs_target, abs_path);
+			if (res < 0) {
+				return res;
+			}
+			free(abs_target);
+			free(abs_path);
+			goto next;
+		}
+
+		const struct stat *stat = archive_entry_stat(entry);
 
 		if ((stat->st_mode & S_IFMT) != S_IFDIR) {
 			// overwrites
@@ -254,18 +269,7 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 				abs_path);
 			break;
 		default:
-			// hardlinks?
-			link = archive_entry_hardlink(entry);
-			if (link) {
-				char *abs_target = calloc(2 + strlen(link),
-					sizeof(char));
-				abs_target[0] = '/';
-				strcpy(&abs_target[1], link);
-				res = guestfs_ln(guestfs, abs_target, abs_path);
-				free(abs_target);
-			} else {
-				fprintf(stderr, "dump_layer: unrecognized file type at %s\n", path);
-			}
+			fprintf(stderr, "dump_layer: unrecognized file type at %s\n", path);
 			goto next;
 		}
 
