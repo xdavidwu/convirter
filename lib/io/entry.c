@@ -214,7 +214,7 @@ static struct cvirt_io_entry *allocate_child(struct cvirt_io_inode *inode,
 
 prepare_entry:
 	inode->children[inode->children_len].name = strndup(name, name_len);
-	inode->children[inode->children_len].inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
+	inode->children[inode->children_len].inode = NULL;
 	assert(inode->children[inode->children_len].name);
 	return &inode->children[inode->children_len++];
 }
@@ -332,30 +332,6 @@ static void checksum_from_archive(uint8_t *dest, struct archive *archive,
 	gcry_md_reset(ctx->gcrypt_handle);
 }
 
-static void inode_deep_copy(struct cvirt_io_inode *dest, struct cvirt_io_inode *src) {
-	copy_stat(&dest->stat, &src->stat);
-
-	dest->xattrs = calloc(src->xattrs_len, sizeof(struct cvirt_io_xattr));
-	assert(dest->xattrs);
-	for (int i = 0; i < src->xattrs_len; i++) {
-		dest->xattrs[i].name = strdup(src->xattrs[i].name);
-		assert(dest->xattrs[i].name);
-		dest->xattrs[i].value = calloc(src->xattrs[i].len, sizeof(uint8_t));
-		assert(dest->xattrs[i].value);
-		memcpy(dest->xattrs[i].value, src->xattrs[i].value, src->xattrs[i].len);
-		dest->xattrs[i].len = src->xattrs[i].len;
-	}
-
-	assert(!S_ISDIR(dest->stat.st_mode));
-
-	if (S_ISREG(dest->stat.st_mode)) {
-		memcpy(dest->sha256sum, src->sha256sum, 32);
-	} else if (S_ISLNK(dest->stat.st_mode)) {
-		dest->target = strdup(src->target);
-		assert(dest->target);
-	}
-}
-
 static int apply_layer_addition(struct cvirt_io_entry *root,
 		struct cvirt_oci_r_layer *layer, uint32_t flags) {
 	struct io_entry_oci_checksum_ctx *checksum_ctx = NULL;
@@ -381,21 +357,30 @@ static int apply_layer_addition(struct cvirt_io_entry *root,
 
 		char *path = normalize_tar_entry_name(orig_name);
 		struct cvirt_io_entry *entry = find_entry(root, path, true);
-		struct cvirt_io_inode *inode = entry->inode;
 		free(path);
 
 		const struct stat *stat = archive_entry_stat(archive_entry);
-		copy_stat(&inode->stat, stat);
 
-		if ((inode->stat.st_mode & S_IFMT) == 0) { // hardlink
+		if ((stat->st_mode & S_IFMT) == 0) { // hardlink
 			char *hardlink = normalize_tar_entry_name(
 				archive_entry_hardlink(archive_entry));
 			struct cvirt_io_entry *target = find_entry(root, hardlink, false);
 			assert(target);
 			free(hardlink);
-			inode_deep_copy(inode, target->inode);
+			entry->inode = target->inode;
+			entry->inode->stat.st_nlink++;
 			continue;
 		}
+
+		if (!entry->inode) {
+			entry->inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
+		} else if (entry->inode->stat.st_nlink > 1) {
+			entry->inode->stat.st_nlink--;
+			entry->inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
+		}
+
+		struct cvirt_io_inode *inode = entry->inode;
+		copy_stat(&inode->stat, stat);
 
 		set_xattr_from_libarchive(inode, archive_entry);
 
