@@ -243,8 +243,7 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 			res = guestfs_ln_s(guestfs, archive_entry_symlink(entry), abs_path);
 			break;
 		case S_IFREG:
-			res = guestfs_mknod(guestfs, stat->st_mode,
-				major(stat->st_rdev), minor(stat->st_rdev),
+			res = guestfs_mknod(guestfs, stat->st_mode, 0, 0,
 				abs_path);
 			if (res < 0) {
 				break;
@@ -279,6 +278,9 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 		res = set_attr(guestfs, abs_path, entry, stat);
 		if (res < 0) {
 			return res;
+		}
+		if ((!S_ISLNK(stat->st_mode)) && (stat->st_mode & 0700)) {
+			guestfs_chmod(guestfs, stat->st_mode & 07777, abs_path);
 		}
 		free(abs_path);
 next:
