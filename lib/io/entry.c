@@ -57,7 +57,7 @@ static void set_xattrs_from_guestfs_xattr_array(struct cvirt_io_inode *inode,
 
 static void checksum_from_guestfs(uint8_t *dest, guestfs_h *guestfs,
 		const char *path, size_t sz,
-		struct io_entry_guestfs_checksum_ctx *ctx) {
+		struct io_entry_guestfs_ctx *ctx) {
 	size_t offset = 0, read = 0;
 	while (sz > 0) {
 		char *buf = guestfs_pread(guestfs, path,
@@ -74,7 +74,7 @@ static void checksum_from_guestfs(uint8_t *dest, guestfs_h *guestfs,
 
 static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 		guestfs_h *guestfs, const char *path, uint32_t flags,
-		struct io_entry_guestfs_checksum_ctx *checksum_ctx) {
+		struct io_entry_guestfs_ctx *ctx) {
 	char **ls = guestfs_ls(guestfs, path);
 	if (!ls) {
 		return;
@@ -109,7 +109,32 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 	assert(abs_path);
 	for (int i = 0; i < inode->children_len; i++) {
 		inode->children[i].name = ls[i];
-		inode->children[i].inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
+		if (stats->val[i].st_nlink > 1) {
+			bool found = false;
+			struct cvirt_list *ptr = ctx->hardlink_inodes;
+			while (ptr->next) {
+				ptr = ptr->next;
+				struct cvirt_io_inode *target_inode = ptr->data;
+				if (target_inode->stat.st_dev == stats->val[i].st_dev &&
+						target_inode->stat.st_ino == stats->val[i].st_ino) {
+					inode->children[i].inode = target_inode;
+					target_inode->stat.st_nlink++;
+					if (target_inode->stat.st_nlink == stats->val[i].st_nlink) {
+						// last link, no longer a candidate
+						cvirt_list_remove(ctx->hardlink_inodes, ptr);
+					}
+					found = true;
+					break;
+				}
+			}
+			if (found) {
+				continue;
+			}
+			inode->children[i].inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
+			cvirt_list_append(ctx->hardlink_inodes, inode->children[i].inode);
+		} else {
+			inode->children[i].inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
+		}
 		copy_stat_from_guestfs_statns(inode->children[i].inode, &stats->val[i]);
 
 		strcpy(&abs_path[common_len + 1], ls[i]);
@@ -122,7 +147,7 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 
 		if (S_ISDIR(inode->children[i].inode->stat.st_mode)) {
 			guestfs_dir_fill_children(&inode->children[i], guestfs,
-				abs_path, flags, checksum_ctx);
+				abs_path, flags, ctx);
 		} else if (S_ISLNK(inode->children[i].inode->stat.st_mode)) {
 			char *link = guestfs_readlink(guestfs, abs_path);
 			assert(link);
@@ -131,7 +156,7 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 				S_ISREG(inode->children[i].inode->stat.st_mode)) {
 			checksum_from_guestfs(inode->children[i].inode->sha256sum,
 				guestfs, abs_path,
-				inode->children[i].inode->stat.st_size, checksum_ctx);
+				inode->children[i].inode->stat.st_size, ctx);
 		}
 	}
 	guestfs_free_statns_list(stats);
@@ -146,11 +171,10 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 		return NULL;
 	}
 
-	struct io_entry_guestfs_checksum_ctx *checksum_ctx = NULL;
+	struct io_entry_guestfs_ctx ctx = {0};
+	ctx.hardlink_inodes = cvirt_list_new();
 	if (flags & CVIRT_IO_TREE_CHECKSUM) {
-		checksum_ctx = calloc(1, sizeof(struct io_entry_guestfs_checksum_ctx));
-		assert(checksum_ctx);
-		gcry_md_open(&checksum_ctx->gcrypt_handle, GCRY_MD_SHA256, 0);
+		gcry_md_open(&ctx.gcrypt_handle, GCRY_MD_SHA256, 0);
 	}
 
 	result->name = strdup("/");
@@ -167,7 +191,9 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 	set_xattrs_from_guestfs_xattr_array(result->inode, xattrs->val, xattrs->len);
 	guestfs_free_xattr_list(xattrs);
 
-	guestfs_dir_fill_children(result, guestfs, "/", flags, checksum_ctx);
+	guestfs_dir_fill_children(result, guestfs, "/", flags, &ctx);
+
+	cvirt_list_destroy(ctx.hardlink_inodes);
 
 	return result;
 }
