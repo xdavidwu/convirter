@@ -13,3 +13,11 @@ executable(
   link_with: [libconvirter],
   include_directories: [libconvirter_include]
 )
+
+executable(
+  'convirter-diff',
+  ['convirter-diff.c', '../common/guestfs.c'],
+  dependencies: [libguestfs],
+  link_with: [libconvirter],
+  include_directories: [libconvirter_include]
+)

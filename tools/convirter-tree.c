@@ -162,7 +162,6 @@ int main(int argc, char *argv[]) {
 		struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(fd);
 		const char *manifest_digest = cvirt_oci_r_index_get_native_manifest_digest(index);
 		struct cvirt_oci_r_manifest *manifest = cvirt_oci_r_manifest_from_archive_blob(fd, manifest_digest);
-		// TODO multi-layer
 		const char *layer_digest = cvirt_oci_r_manifest_get_layer_digest(manifest, 0);
 		struct cvirt_oci_r_layer *layer =
 			cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
