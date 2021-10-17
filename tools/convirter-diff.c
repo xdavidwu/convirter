@@ -54,58 +54,59 @@ static const char *mode_type_string(mode_t mode) {
 	return "unknown";
 }
 
-static int compare_stat(struct stat *a, struct stat *b, const char *path) {
+static bool compare_stat(struct stat *a, struct stat *b, const char *path) {
 	if ((a->st_mode & S_IFMT) != (b->st_mode & S_IFMT)) {
 		printf("File a/%s is a %s while file b/%s is a %s\n", path,
 			mode_type_string(a->st_mode), path, mode_type_string(b->st_mode));
-		return 1;
+		return true;
 	}
 	if (a->st_mode != b->st_mode) {
 		printf("File a/%s is %o while file b/%s is %o\n", path,
 			a->st_mode & 07777, path, b->st_mode & 07777);
-		return 1;
+		return true;
 	}
 	if (a->st_uid != b->st_uid || a->st_gid != b->st_gid) {
 		printf("File a/%s is owned by %d:%d while file b/%s is owned by %d:%d\n",
 			path, a->st_uid, a->st_gid, path, b->st_uid, b->st_gid);
-		return 1;
+		return true;
 	}
 	if ((S_ISCHR(a->st_mode) || S_ISBLK(a->st_mode)) && a->st_rdev != b->st_rdev) {
 		printf("File a/%s is %d:%d while file b/%s is %d:%d\n",
 			path, major(a->st_rdev), minor(a->st_rdev),
 			path, major(b->st_rdev), minor(b->st_rdev));
-		return 1;
+		return true;
 	}
 	if (S_ISREG(a->st_mode) && a->st_size != b->st_size) {
 		printf("File a/%s has %ld bytes while file b/%s has %ld bytes\n",
 			path, a->st_size, path, b->st_size);
-		return 1;
+		return true;
 	}
 	if (a->st_mtime != b->st_mtime) {
 		printf("File a/%s and file b/%s have different mtime\n", path, path);
-		return 1;
+		return true;
 	}
 	if (a->st_atime != b->st_atime) {
 		printf("File a/%s and file b/%s have different mtime\n", path, path);
-		return 1;
+		return true;
 	}
-	return 0;
+	return false;
 }
 
-static int compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b, const char *path) {
-	return 0; //TODO
+static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b, const char *path) {
+	return false; //TODO
 }
 
-static void diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entry *b, const char *path) {
+static bool diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entry *b, const char *path) {
 	int res = 0;
+	bool differs = false;
 	if (path[0] != '\0') { //TODO compare root
 		res = compare_stat(&a->inode->stat, &b->inode->stat, path);
 		if (res) {
-			return;
+			return true;
 		}
 		res = compare_xattr(a->inode, b->inode, path);
 		if (res) {
-			return;
+			return true;
 		}
 	}
 
@@ -113,10 +114,12 @@ static void diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entr
 		if ((!skip_checksum) &&
 				memcmp(a->inode->sha256sum, b->inode->sha256sum, 32)) {
 			printf("File a/%s and file b/%s have different content\n", path, path);
+			return true;
 		}
 	} else if (S_ISLNK(a->inode->stat.st_mode)) {
 		if (strcmp(a->inode->target, b->inode->target)) {
 			printf("File a/%s and file b/%s have different link target\n", path, path);
+			return true;
 		}
 	} else if (S_ISDIR(a->inode->stat.st_mode)) {
 		bool b_compared[b->inode->children_len];
@@ -139,21 +142,26 @@ static void diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entr
 					}
 					found = true;
 					b_compared[j] = true;
-					diff_tree(&a->inode->children[i],
-						&b->inode->children[j], npath);
+					if (diff_tree(&a->inode->children[i],
+							&b->inode->children[j], npath)) {
+						differs = true;
+					}
 					break;
 				}
 			}
 			if (!found) {
 				printf("Only in a/%s: %s\n", path, a->inode->children[i].name);
+				differs = true;
 			}
 		}
 		for (int j = 0; j < b->inode->children_len; j++) {
 			if (!b_compared[j]) {
 				printf("Only in b/%s: %s\n", path, b->inode->children[j].name);
+				differs = true;
 			}
 		}
 	}
+	return differs;
 }
 
 static struct cvirt_io_entry *get_tree_from_arg(const char *arg, uint32_t flags) {
@@ -161,7 +169,7 @@ static struct cvirt_io_entry *get_tree_from_arg(const char *arg, uint32_t flags)
 	if (!strncmp(arg, "disk-image:", 11)) {
 		guestfs_h *guestfs = create_guestfs_mount_first_linux(&arg[11], NULL);
 		if (!guestfs) {
-			exit(EXIT_FAILURE);
+			exit(2);
 		}
 
 		tree = cvirt_io_tree_from_guestfs(guestfs, flags);
@@ -173,7 +181,7 @@ static struct cvirt_io_entry *get_tree_from_arg(const char *arg, uint32_t flags)
 		int fd = open(&arg[12], O_RDONLY | O_CLOEXEC);
 		if (fd < 0) {
 			fprintf(stderr, "Failed to open OCI archive: %s\n", strerror(errno));
-			exit(EXIT_FAILURE);
+			exit(2);
 		}
 		struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(fd);
 		const char *manifest_digest = cvirt_oci_r_index_get_native_manifest_digest(index);
@@ -198,7 +206,7 @@ static struct cvirt_io_entry *get_tree_from_arg(const char *arg, uint32_t flags)
 		close(fd);
 	} else {
 		fprintf(stderr, "Unrecognized input: %s\n", arg);
-		exit(EXIT_FAILURE);
+		exit(2);
 	}
 	return tree;
 }
@@ -209,7 +217,7 @@ int main(int argc, char *argv[]) {
 		switch (opt) {
 		case '?':
 			fprintf(stderr, usage, argv[0]);
-			exit(EXIT_FAILURE);
+			exit(2);
 		case 1:
 			ignore_c2v = true;
 			break;
@@ -221,15 +229,15 @@ int main(int argc, char *argv[]) {
 
 	if (optind + 2 != argc) {
 		fprintf(stderr, usage, argv[0]);
-		exit(EXIT_FAILURE);
+		exit(2);
 	}
 
 	uint32_t flags = skip_checksum ? 0 : CVIRT_IO_TREE_CHECKSUM;
 	struct cvirt_io_entry *a = get_tree_from_arg(argv[optind], flags);
 	struct cvirt_io_entry *b = get_tree_from_arg(argv[optind + 1], flags);
-	diff_tree(a, b, "");
+	bool differs = diff_tree(a, b, "");
 	cvirt_io_tree_destroy(a);
 	cvirt_io_tree_destroy(b);
 
-	return 0;
+	return differs ? 1 : 0;
 }
