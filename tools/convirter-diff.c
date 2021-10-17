@@ -138,6 +138,7 @@ static void diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entr
 						strcpy(npath, a->inode->children[i].name);
 					}
 					found = true;
+					b_compared[j] = true;
 					diff_tree(&a->inode->children[i],
 						&b->inode->children[j], npath);
 					break;
@@ -149,9 +150,8 @@ static void diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entr
 		}
 		for (int j = 0; j < b->inode->children_len; j++) {
 			if (!b_compared[j]) {
-				continue;
+				printf("Only in b/%s: %s\n", path, b->inode->children[j].name);
 			}
-			printf("Only in b/%s: %s\n", path, b->inode->children[j].name);
 		}
 	}
 }
