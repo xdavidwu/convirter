@@ -521,7 +521,8 @@ int main(int argc, char *argv[]) {
 		cvirt_oci_r_layer_destroy(layer);
 	}
 
-	guestfs_h *guestfs = create_qcow2_btrfs_image(argv[2], needed * 2);
+	size_t image_size = (needed * 2) < 114294784 ? 114294784 : (needed * 2);
+	guestfs_h *guestfs = create_qcow2_btrfs_image(argv[2], image_size);
 	if (!guestfs) {
 		exit(EXIT_FAILURE);
 	}
