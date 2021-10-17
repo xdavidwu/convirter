@@ -204,8 +204,6 @@ static struct cvirt_io_entry *get_tree_from_arg(const char *arg, uint32_t flags)
 }
 
 int main(int argc, char *argv[]) {
-	struct cvirt_io_entry *tree;
-
 	int opt;
 	while ((opt = getopt_long(argc, argv, "", long_options, NULL)) != -1) {
 		switch (opt) {
