@@ -194,6 +194,9 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 	guestfs_dir_fill_children(result, guestfs, "/", flags, &ctx);
 
 	cvirt_list_destroy(ctx.hardlink_inodes);
+	if (flags & CVIRT_IO_TREE_CHECKSUM) {
+		gcry_md_close(ctx.gcrypt_handle);
+	}
 
 	return result;
 }
@@ -360,11 +363,9 @@ static void checksum_from_archive(uint8_t *dest, struct archive *archive,
 
 static int apply_layer_addition(struct cvirt_io_entry *root,
 		struct cvirt_oci_r_layer *layer, uint32_t flags) {
-	struct io_entry_oci_checksum_ctx *checksum_ctx = NULL;
+	struct io_entry_oci_checksum_ctx checksum_ctx = {0};
 	if (flags & CVIRT_IO_TREE_CHECKSUM) {
-		checksum_ctx = calloc(1, sizeof(struct io_entry_oci_checksum_ctx));
-		assert(checksum_ctx);
-		gcry_md_open(&checksum_ctx->gcrypt_handle, GCRY_MD_SHA256, 0);
+		gcry_md_open(&checksum_ctx.gcrypt_handle, GCRY_MD_SHA256, 0);
 	}
 
 	struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
@@ -415,10 +416,12 @@ static int apply_layer_addition(struct cvirt_io_entry *root,
 		} else if ((flags & CVIRT_IO_TREE_CHECKSUM) &&
 				S_ISREG(inode->stat.st_mode)) {
 			checksum_from_archive(inode->sha256sum, archive,
-				archive_entry_size(archive_entry), checksum_ctx);
+				archive_entry_size(archive_entry), &checksum_ctx);
 		}
 	}
-	free(checksum_ctx);
+	if (flags & CVIRT_IO_TREE_CHECKSUM) {
+		gcry_md_close(checksum_ctx.gcrypt_handle);
+	}
 	if (res == ARCHIVE_FATAL) {
 		return -1;
 	}
@@ -490,20 +493,15 @@ struct cvirt_io_entry *cvirt_io_tree_from_oci_layer(struct cvirt_oci_r_layer *la
 		return NULL;
 	}
 
-	struct io_entry_oci_checksum_ctx *checksum_ctx = NULL;
-	if (flags & CVIRT_IO_TREE_CHECKSUM) {
-		checksum_ctx = calloc(1, sizeof(struct io_entry_oci_checksum_ctx));
-		assert(checksum_ctx);
-		gcry_md_open(&checksum_ctx->gcrypt_handle, GCRY_MD_SHA256, 0);
-	}
-
 	result->name = strdup("/");
 	assert(result->name);
 	result->inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
 
 	result->inode->stat.st_mode = S_IFDIR | 0755;
+	result->inode->stat.st_nlink = 1;
 
 	int res = apply_layer_addition(result, layer, flags);
+
 	if (res < 0) {
 		cvirt_io_tree_destroy(result);
 		return NULL;
