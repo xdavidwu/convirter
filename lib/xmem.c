@@ -13,7 +13,7 @@ void *cvirt_xmalloc(size_t size) {
 
 void *cvirt_xcalloc(size_t nmemb, size_t size) {
 	void *res = calloc(nmemb, size);
-	if (!res && (nmemb * size)) {
+	if (!res && (nmemb && size)) {
 		fprintf(stderr, "calloc(%zu, %zu) failed", nmemb, size);
 		exit(EXIT_FAILURE);
 	}
