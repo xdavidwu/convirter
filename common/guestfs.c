@@ -33,11 +33,11 @@ guestfs_h *create_guestfs_mount_first_linux(const char *image,
 	char *target_root = NULL;
 	if (!roots) {
 		fprintf(stderr, "No OSes detected\n");
-		goto err_launched;
+		goto try_first_filesystem;
 	} else if (!roots[0]) {
 		free(roots);
 		fprintf(stderr, "No root found\n");
-		goto err_launched;
+		goto try_first_filesystem;
 	}
 	int i = 0;
 	for (; roots[i]; i++) {
@@ -65,9 +65,11 @@ guestfs_h *create_guestfs_mount_first_linux(const char *image,
 	char **mounts = guestfs_inspect_get_mountpoints(result, target_root);
 	free(target_root);
 	if (!mounts) {
+		fprintf(stderr, "No mountpoints detected\n");
 		goto err_launched;
 	} else if (!mounts[0]) {
 		free(mounts);
+		fprintf(stderr, "No mountpoints detected\n");
 		goto err_launched;
 	}
 	int sz = 0, succeeded_mounts_index = 0;
@@ -107,6 +109,33 @@ guestfs_h *create_guestfs_mount_first_linux(const char *image,
 
 	return result;
 
+try_first_filesystem:
+	fprintf(stderr, "Trying first mountable filesystem\n");
+	char **filesystems = guestfs_list_filesystems(result);
+	if (!filesystems) {
+		fprintf(stderr, "Cannot found any filesystem\n");
+		goto err_launched;
+	} else if (!filesystems[0]) {
+		fprintf(stderr, "Cannot found any filesystem\n");
+		free(filesystems);
+		goto err_launched;
+	}
+	bool mounted = false;
+	for (int i = 0; filesystems[i]; i += 2) {
+		if (!mounted && strcmp(filesystems[i + 1], "swap") &&
+				strcmp(filesystems[i + 1], "unknown")) {
+			if (guestfs_mount(result, filesystems[i], "/") == 0) {
+				mounted = true;
+			}
+		}
+		free(filesystems[i]);
+		free(filesystems[i + 1]);
+	}
+	free(filesystems);
+	if (mounted) {
+		return result;
+	}
+	fprintf(stderr, "Cannot mount first filesystem\n");
 err_launched:
 	guestfs_shutdown(result);
 err_created:
