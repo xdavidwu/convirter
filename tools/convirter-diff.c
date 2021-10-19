@@ -1,4 +1,5 @@
 #include <convirter/io/entry.h>
+#include <convirter/io/xattr.h>
 #include <convirter/oci-r/index.h>
 #include <convirter/oci-r/layer.h>
 #include <convirter/oci-r/manifest.h>
@@ -93,7 +94,41 @@ static bool compare_stat(struct stat *a, struct stat *b, const char *path) {
 }
 
 static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b, const char *path) {
-	return false; //TODO
+	bool b_compared[b->xattrs_len];
+	memset(b_compared, 0, sizeof(bool) * b->xattrs_len);
+	for (int i = 0; i < a->xattrs_len; i++) {
+		bool found = false;
+		for (int j = 0; j < b->xattrs_len; j++) {
+			if (b_compared[j]) {
+				continue;
+			}
+			if (!strcmp(a->xattrs[i].name,
+					b->xattrs[j].name)) {
+				found = true;
+				b_compared[j] = true;
+				if (a->xattrs[i].len != b->xattrs[j].len ||
+						memcmp(a->xattrs[i].value,
+						b->xattrs[j].value, a->xattrs[i].len)) {
+					printf("File a/%s and file b/%s have different xattr %s value\n",
+						path, path, a->xattrs[i].name);
+					return true;
+				}
+			}
+		}
+		if (!found) {
+			printf("File b/%s has xattr %s while file a/%s does not\n",
+				path, a->xattrs[i].name, path);
+			return true;
+		}
+	}
+	for (int j = 0; j < b->xattrs_len; j++) {
+		if (!b_compared[j]) {
+			printf("File b/%s has xattr %s while file a/%s does not\n",
+				path, b->xattrs[j].name, path);
+			return true;
+		}
+	}
+	return false;
 }
 
 static bool diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entry *b, const char *path) {
