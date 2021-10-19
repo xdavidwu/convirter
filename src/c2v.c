@@ -31,18 +31,24 @@ static int set_attr(guestfs_h *guestfs, const char *path,
 	if (res < 0) {
 		return res;
 	}
+	res = guestfs_utimens(guestfs, path, stat->st_atim.tv_sec,
+		stat->st_atim.tv_nsec, stat->st_mtim.tv_sec, stat->st_mtim.tv_nsec);
+	if (res < 0) {
+		return res;
+	}
+	if ((!S_ISLNK(stat->st_mode)) && (stat->st_mode & 0700)) {
+		guestfs_chmod(guestfs, stat->st_mode & 07777, path);
+	}
 	const char *name;
 	const void *val;
 	size_t sz;
-	while (true) {
+	int count = archive_entry_xattr_count(entry);
+	archive_entry_xattr_reset(entry);
+	for (int i = 0; i < count; i++) {
 		archive_entry_xattr_next(entry, &name, &val, &sz);
-		if (!name) {
-			break;
-		}
 		guestfs_lsetxattr(guestfs, name, val, sz, path);
 	}
-	return guestfs_utimens(guestfs, path, stat->st_atim.tv_sec,
-		stat->st_atim.tv_nsec, stat->st_mtim.tv_sec, stat->st_mtim.tv_nsec);
+	return res;
 }
 
 static int dump_file(guestfs_h *guestfs, struct archive *archive,
@@ -278,9 +284,6 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 		res = set_attr(guestfs, abs_path, entry, stat);
 		if (res < 0) {
 			return res;
-		}
-		if ((!S_ISLNK(stat->st_mode)) && (stat->st_mode & 0700)) {
-			guestfs_chmod(guestfs, stat->st_mode & 07777, abs_path);
 		}
 		free(abs_path);
 next:
