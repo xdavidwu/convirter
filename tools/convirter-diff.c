@@ -134,7 +134,10 @@ static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b, co
 static bool diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entry *b, const char *path) {
 	int res = 0;
 	bool differs = false;
-	if (path[0] != '\0') { //TODO compare root
+	if (ignore_c2v && !strcmp(".c2v", path)) {
+		return false;
+	}
+	if (path[0] != '\0') { //TODO compare root?
 		res = compare_stat(&a->inode->stat, &b->inode->stat, path);
 		if (res) {
 			return true;
@@ -161,6 +164,10 @@ static bool diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entr
 		memset(b_compared, 0, sizeof(bool) * b->inode->children_len);
 		for (int i = 0; i < a->inode->children_len; i++) {
 			bool found = false;
+			if (ignore_c2v && !path[0] &&
+					!strcmp(".c2v", a->inode->children[i].name)) {
+				continue;
+			}
 			for (int j = 0; j < b->inode->children_len; j++) {
 				if (b_compared[j]) {
 					continue;
@@ -190,6 +197,10 @@ static bool diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entr
 			}
 		}
 		for (int j = 0; j < b->inode->children_len; j++) {
+			if (ignore_c2v && !path[0] &&
+					!strcmp(".c2v", b->inode->children[j].name)) {
+				continue;
+			}
 			if (!b_compared[j]) {
 				printf("Only in b/%s: %s\n", path, b->inode->children[j].name);
 				differs = true;
