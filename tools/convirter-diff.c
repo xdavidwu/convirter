@@ -86,8 +86,8 @@ static bool compare_stat(struct stat *a, struct stat *b, const char *path) {
 		printf("File a/%s and file b/%s have different mtime\n", path, path);
 		return true;
 	}
-	if (a->st_atime != b->st_atime) {
-		printf("File a/%s and file b/%s have different mtime\n", path, path);
+	if (a->st_atime && b->st_atime && a->st_atime != b->st_atime) {
+		printf("File a/%s and file b/%s have different atime\n", path, path);
 		return true;
 	}
 	return false;
