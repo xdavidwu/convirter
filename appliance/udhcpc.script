@@ -25,7 +25,7 @@ case "$1" in
 
 		if [ -n "$router" ] ; then
 			echo "Deleting routers"
-			while busybox route del default gw 0.0.0.0 dev $interface ; do
+			while busybox ip route del default dev $interface ; do
 				:
 			done
 
@@ -33,32 +33,25 @@ case "$1" in
 			for i in $router ; do
 				echo "Adding router $i"
 				if [ "$subnet" = "255.255.255.255" ]; then
-	# special case for /32 subnets:
-	# /32 instructs kernel to always use routing for all outgoing packets
-	# (they can never be sent to local subnet - there is no local subnet for /32).
-	# Used in datacenters, avoids the need for private ip-addresses between two hops.
+						# special case for /32 subnets:
+						# /32 instructs kernel to always use routing for all outgoing packets
+						# (they can never be sent to local subnet - there is no local subnet for /32).
+						# Used in datacenters, avoids the need for private ip-addresses between two hops.
 					busybox ip route add $i dev $interface
 				fi
-				busybox route add default gw $i dev $interface metric $((metric++))
+				busybox ip route add default via $i dev $interface metric $((metric++))
 			done
 		fi
 
-		# If the file is a symlink somewhere (like /etc/resolv.conf
-		# pointing to /run/resolv.conf), make sure things work.
-		if test -L "$RESOLV_CONF"; then
-			# If it's a dangling symlink, try to create the target.
-			test -e "$RESOLV_CONF" || busybox touch "$RESOLV_CONF"
-		fi
-		realconf=$(busybox realpath "$RESOLV_CONF" 2>/dev/null || echo "$RESOLV_CONF")
-		echo "Recreating $realconf"
-		tmpfile="$realconf-$$"
+		echo "Recreating $RESOLV_CONF"
+		tmpfile="$RESOLV_CONF-$$"
 		> "$tmpfile"
 		[ -n "$domain" ] && echo "search $domain" >> "$tmpfile"
 		for i in $dns ; do
 			echo " Adding DNS server $i"
 			echo "nameserver $i" >> "$tmpfile"
 		done
-		busybox mv "$tmpfile" "$realconf"
+		busybox mv "$tmpfile" "$RESOLV_CONF"
 		;;
 esac
 
