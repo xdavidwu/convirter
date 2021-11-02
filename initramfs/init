@@ -24,7 +24,9 @@ find /sys/devices -name modalias -type f -print0 | xargs -0 /busybox sort -u | x
 
 alias modprobe="/modprobe -d /mnt/modules"
 
-set -- $(cat /proc/cmdline)
+IFS='
+'
+set -- $(xargs /busybox printf '%s\n' </proc/cmdline)
 for i; do
 	case "$i" in
 	hostname=*)
