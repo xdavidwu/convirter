@@ -50,6 +50,9 @@ for i; do
 	root=*)
 		ROOT="${i#root=}"
 		;;
+	init=*)
+		INIT="${i#init=}"
+		;;
 	esac
 done
 
@@ -101,6 +104,8 @@ mount -o move /mnt/modules"$MODULES_PATH" /mnt/merged"$MODULES_PATH"
 # /.c2v/init sets real target (entrypoint + cmd) in $@, set a traditional init as default here
 set -- /sbin/init
 . /mnt/merged/.c2v/init
+
+[ -n "$INIT" ] && set -- $(echo "$INIT" | xargs /busybox printf '%s\n')
 
 # we do not need setuidgid if 0:0
 [ "$UIDGID" = '0' ] || [ "$UIDGID" = '0:0' ] && unset UIDGID
