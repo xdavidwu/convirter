@@ -86,15 +86,6 @@ else
 	udhcpc -fqs /udhcpc.script
 fi
 
-touch /mnt/merged/.c2v/busybox
-# See mount(8)
-mount -o bind /busybox /mnt/merged/.c2v/busybox
-mount -o remount,bind,ro /busybox /mnt/merged/.c2v/busybox
-
-touch /mnt/merged/.c2v/setuidgid
-mount -o bind /setuidgid /mnt/merged/.c2v/setuidgid
-mount -o remount,bind,ro /setuidgid /mnt/merged/.c2v/setuidgid
-
 mkdir -p /mnt/merged/etc
 touch /mnt/merged/etc/resolv.conf
 mount -o bind /etc/resolv.conf /mnt/merged/etc/resolv.conf
@@ -108,8 +99,25 @@ umount /tmp
 
 mkdir -p /mnt/merged/dev /mnt/merged/sys /mnt/merged/proc /mnt/merged"$MODULES_PATH"
 mount -o move /mnt/modules"$MODULES_PATH" /mnt/merged"$MODULES_PATH"
+
+# /.c2v/init sets real target (entrypoint + cmd) in $@, set a traditional init as default here
+set -- /sbin/init
+. /mnt/merged/.c2v/init
+
+# we do not need setuidgid if 0:0
+[ "$UIDGID" = '0' ] || [ "$UIDGID" = '0:0' ] && unset UIDGID
+
+if [ -n "$UIDGID" ]; then
+	touch /mnt/merged/.c2v/setuidgid
+	# See mount(8)
+	mount -o bind /setuidgid /mnt/merged/.c2v/setuidgid
+	mount -o remount,bind,ro /setuidgid /mnt/merged/.c2v/setuidgid
+fi
+
+
 mount -o move /dev /mnt/merged/dev
 mount -o move /sys /mnt/merged/sys
 mount -o move /proc /mnt/merged/proc
 
-exec /busybox switch_root /mnt/merged/ /.c2v/busybox ash /.c2v/init
+
+exec /busybox switch_root /mnt/merged/ ${UIDGID:+/.c2v/setuidgid $UIDGID} "$@"

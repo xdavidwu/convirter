@@ -329,14 +329,7 @@ static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
 
 static int generate_init_script(guestfs_h *guestfs,
 		struct cvirt_oci_r_config *config) {
-	const char pre_env[] =
-		C2V_BUSYBOX " umount -r /.old_root\n";
-	int res = guestfs_write_append(guestfs, C2V_INIT, pre_env,
-		strlen(pre_env));
-	if (res < 0) {
-		return res;
-	}
-
+	int res;
 	int env_count = cvirt_oci_r_config_get_env_length(config);
 	for (int i = 0; i < env_count; i++) {
 		const char export_pre[] = "export '";
@@ -361,7 +354,7 @@ static int generate_init_script(guestfs_h *guestfs,
 
 	const char *workdir = cvirt_oci_r_config_get_working_dir(config);
 	if (workdir) {
-		const char workdir_pre[] = "\ncd '";
+		const char workdir_pre[] = "WORKDIR='";
 		res = guestfs_write_append(guestfs, C2V_INIT,
 			workdir_pre, strlen(workdir_pre));
 		if (res < 0) {
@@ -380,23 +373,16 @@ static int generate_init_script(guestfs_h *guestfs,
 		}
 	}
 
-	const char pre_cmd[] = "\nexec ";
-	res = guestfs_write_append(guestfs, C2V_INIT,
-		pre_cmd, strlen(pre_cmd));
-	if (res < 0) {
-		return res;
-	}
-
 	const char *user = cvirt_oci_r_config_get_user(config);
 	if (user) {
-		const char user_pre[] = " /.c2v/setuidgid '";
+		const char user_pre[] = "UIDGID='";
 		res = guestfs_write_append(guestfs, C2V_INIT,
 			user_pre, strlen(user_pre));
 		if (res < 0) {
 			return res;
 		}
 		res = append_quote_escaped_string(guestfs, C2V_INIT, user);
-		const char user_post[] = "' ";
+		const char user_post[] = "'\n";
 		res = guestfs_write_append(guestfs, C2V_INIT,
 			user_post, strlen(user_post));
 		if (res < 0) {
@@ -406,14 +392,12 @@ static int generate_init_script(guestfs_h *guestfs,
 
 	int entrypoint_len = cvirt_oci_r_config_get_entrypoint_length(config),
 		cmd_len = cvirt_oci_r_config_get_cmd_length(config);
-	if (!entrypoint_len && !cmd_len) {
-		const char default_cmd[] = "/sbin/init\n";
-		res = guestfs_write_append(guestfs, C2V_INIT,
-			default_cmd, strlen(default_cmd));
+	if (entrypoint_len || cmd_len) {
+		const char pre_cmd[] = "set -- ";
+		res = guestfs_write_append(guestfs, C2V_INIT, pre_cmd, strlen(pre_cmd));
 		if (res < 0) {
 			return res;
 		}
-	} else {
 		for (int i = 0; i < entrypoint_len; i++) {
 			const char pre[] = "'";
 			res = guestfs_write_append(guestfs, C2V_INIT,
@@ -453,6 +437,11 @@ static int generate_init_script(guestfs_h *guestfs,
 			if (res < 0) {
 				return res;
 			}
+		}
+		const char post_cmd[] = "\n";
+		res = guestfs_write_append(guestfs, C2V_INIT, post_cmd, strlen(post_cmd));
+		if (res < 0) {
+			return res;
 		}
 	}
 
