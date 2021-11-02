@@ -38,6 +38,12 @@ for i; do
 	nameserver=*)
 		NAMESERVER="${i#nameserver=}"
 		;;
+	data=*)
+		DATA="${i#data=}"
+		;;
+	datatype=*)
+		DATATYPE="${i#datatype=}"
+		;;
 	esac
 done
 
@@ -46,10 +52,21 @@ echo "$HOSTNAME" > /etc/hostname
 hostname "$HOSTNAME"
 
 modprobe btrfs || true
-mkdir -p /mnt/lower /tmp/upper /tmp/work /mnt/merged
+mkdir -p /mnt/lower /mnt/data /mnt/merged
 mount /dev/sdb /mnt/lower
+if [ -n "$DATA" ]; then
+	if [ -n "$DATATYPE" ];then
+		modprobe "$DATATYPE" || true
+		mount -t "$DATATYPE" "$DATA" /mnt/data
+	else
+		mount "$DATA" /mnt/data
+	fi
+else
+	mount -t tmpfs tmpfs /mnt/data
+fi
+mkdir -p /mnt/data/work /mnt/data/upper
 modprobe overlay || true
-mount -t overlay -olowerdir=/mnt/lower,upperdir=/tmp/upper,workdir=/tmp/work overlay /mnt/merged
+mount -t overlay -olowerdir=/mnt/lower,upperdir=/mnt/data/upper,workdir=/mnt/data/work overlay /mnt/merged
 
 ip l set eth0 up
 if [ -n "$IFADDR" ]; then
