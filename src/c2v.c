@@ -310,7 +310,7 @@ static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
 				}
 			}
 			res = guestfs_write_append(guestfs,
-				path, "\\'", 2);
+				path, "'\"'\"'", 5);
 			if (res < 0) {
 				return res;
 			}
