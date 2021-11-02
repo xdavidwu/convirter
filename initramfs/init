@@ -29,6 +29,15 @@ for i; do
 	hostname=*)
 		HOSTNAME="${i#hostname=}"
 		;;
+	ifaddr=*)
+		IFADDR="${i#ifaddr=}"
+		;;
+	gwaddr=*)
+		GWADDR="${i#gwaddr=}"
+		;;
+	nameserver=*)
+		NAMESERVER="${i#nameserver=}"
+		;;
 	esac
 done
 
@@ -43,8 +52,16 @@ modprobe overlay || true
 mount -t overlay -olowerdir=/mnt/lower,upperdir=/tmp/upper,workdir=/tmp/work overlay /mnt/merged
 
 ip l set eth0 up
-modprobe af_packet || true
-udhcpc -fqs /udhcpc.script
+if [ -n "$IFADDR" ]; then
+	ip a add "$IFADDR" dev eth0
+	[ -n "$GWADDR" ] && ip r add default via "$GWADDR" dev eth0
+	if [ -n "$NAMESERVER" ]; then
+		echo "nameserver $NAMESERVER" > /etc/resolv.conf
+	fi
+else
+	modprobe af_packet || true
+	udhcpc -fqs /udhcpc.script
+fi
 
 touch /mnt/merged/.c2v/busybox
 # See mount(8)
