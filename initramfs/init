@@ -1,6 +1,7 @@
 #!/busybox ash
 
 set -e
+ROOT=/dev/sdb
 
 alias busybox="/busybox"
 alias modprobe="/modprobe"
@@ -44,6 +45,9 @@ for i; do
 	datatype=*)
 		DATATYPE="${i#datatype=}"
 		;;
+	root=*)
+		ROOT="${i#root=}"
+		;;
 	esac
 done
 
@@ -53,7 +57,7 @@ hostname "$HOSTNAME"
 
 modprobe btrfs || true
 mkdir -p /mnt/lower /mnt/data /mnt/merged
-mount /dev/sdb /mnt/lower
+mount "$ROOT" /mnt/lower
 if [ -n "$DATA" ]; then
 	if [ -n "$DATATYPE" ];then
 		modprobe "$DATATYPE" || true
