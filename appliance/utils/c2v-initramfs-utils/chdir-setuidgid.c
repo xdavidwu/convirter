@@ -20,7 +20,11 @@ static int is_numeric(const char *str) {
 }
 
 int main(int argc, char *argv[]) {
-	chdir(argv[1]);
+	errno = 0;
+	if (chdir(argv[1]) < 0) {
+		perror("chdir");
+		return errno;
+	}
 	char *user = argv[2];
 	char *group = strchr(user, ':');
 	if (group) {
