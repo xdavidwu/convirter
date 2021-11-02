@@ -1,4 +1,4 @@
-project('convirter-setuidgid', 'c')
+project('c2v-initramfs-utils', 'c')
 
 setuidgid = executable(
   'setuidgid',

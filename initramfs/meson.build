@@ -33,7 +33,7 @@ if get_option('build_initramfs_utils')
   )
 
   custom_target('setuidgid',
-    command: [utils_dir / 'setuidgid' / 'build.sh', utils_dir / 'setuidgid', '@OUTPUT@'],
+    command: [utils_dir / 'c2v-initramfs-utils' / 'build.sh', utils_dir / 'setuidgid', '@OUTPUT@'],
     output: 'setuidgid',
     install: true,
     install_dir: initramfs_data_path
