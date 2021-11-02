@@ -17,6 +17,7 @@ guestfs_h *create_guestfs_mount_first_linux(const char *image,
 		fprintf(stderr, "Cannot create libguestfs handle\n");
 		return NULL;
 	}
+	guestfs_set_autosync(result, 0);
 	res = guestfs_add_drive_opts(result, image,
 		GUESTFS_ADD_DRIVE_OPTS_READONLY, 1, -1);
 	if (res < 0) {
