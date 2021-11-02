@@ -23,7 +23,16 @@ find /sys/devices -name modalias -type f -print0 | xargs -0 /busybox sort -u | x
 
 alias modprobe="/modprobe -d /mnt/modules"
 
-HOSTNAME=$(head -c 6 /dev/urandom | hexdump -e '6/1 "%02x"')
+set -- $(cat /proc/cmdline)
+for i; do
+	case "$i" in
+	hostname=*)
+		HOSTNAME="${i#hostname=}"
+		;;
+	esac
+done
+
+HOSTNAME=${HOSTNAME:-$(head -c 6 /dev/urandom | hexdump -e '6/1 "%02x"')}
 echo "$HOSTNAME" > /etc/hostname
 hostname "$HOSTNAME"
 
