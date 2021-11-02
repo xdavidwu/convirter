@@ -89,10 +89,8 @@ fi
 mkdir -p /mnt/merged/etc
 touch /mnt/merged/etc/resolv.conf
 mount -o bind /etc/resolv.conf /mnt/merged/etc/resolv.conf
-mount -o remount,bind,ro /etc/resolv.conf /mnt/merged/etc/resolv.conf
 touch /mnt/merged/etc/hostname
 mount -o bind /etc/hostname /mnt/merged/etc/hostname
-mount -o remount,bind,ro /etc/hostname /mnt/merged/etc/hostname
 
 umount /mnt/lower
 umount /tmp
