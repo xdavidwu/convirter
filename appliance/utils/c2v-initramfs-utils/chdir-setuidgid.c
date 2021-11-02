@@ -20,7 +20,8 @@ static int is_numeric(const char *str) {
 }
 
 int main(int argc, char *argv[]) {
-	char *user = argv[1];
+	chdir(argv[1]);
+	char *user = argv[2];
 	char *group = strchr(user, ':');
 	if (group) {
 		*group = '\0';
@@ -88,7 +89,7 @@ int main(int argc, char *argv[]) {
 	}
 	setgid(gid);
 	setuid(uid);
-	execvp(argv[2], &argv[2]);
+	execvp(argv[3], &argv[3]);
 	perror("execvp");
 	return errno;
 }

@@ -32,14 +32,14 @@ if get_option('build_initramfs_utils')
     install_dir: initramfs_data_path
   )
 
-  custom_target('setuidgid',
+  custom_target('chdir-setuidgid',
     command: [utils_dir / 'c2v-initramfs-utils' / 'build.sh', utils_dir / 'setuidgid', '@OUTPUT@'],
-    output: 'setuidgid',
+    output: 'chdir-setuidgid',
     install: true,
     install_dir: initramfs_data_path
   )
 else
-  data += ['busybox', 'modprobe', 'setuidgid']
+  data += ['busybox', 'modprobe', 'chdir-setuidgid']
 endif
 
 install_data(

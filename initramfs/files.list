@@ -1,5 +1,5 @@
 init
 modprobe
 busybox
-setuidgid
+chdir-setuidgid
 udhcpc.script

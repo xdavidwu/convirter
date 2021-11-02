@@ -106,18 +106,19 @@ set -- /sbin/init
 
 # we do not need setuidgid if 0:0
 [ "$UIDGID" = '0' ] || [ "$UIDGID" = '0:0' ] && unset UIDGID
+# we do not need chdir if /
+[ "$WORKDIR" = '/' ] && unset WORKDIR
 
-if [ -n "$UIDGID" ]; then
-	touch /mnt/merged/.c2v/setuidgid
+if [ -n "$UIDGID" ] || [ -n "$WORKDIR" ] ; then
+	touch /mnt/merged/.c2v/chdir-setuidgid
 	# See mount(8)
-	mount -o bind /setuidgid /mnt/merged/.c2v/setuidgid
-	mount -o remount,bind,ro /setuidgid /mnt/merged/.c2v/setuidgid
+	mount -o bind /chdir-setuidgid /mnt/merged/.c2v/chdir-setuidgid
+	mount -o remount,bind,ro /chdir-setuidgid /mnt/merged/.c2v/chdir-setuidgid
+	set -- /.c2v/chdir-setuidgid "${WORKDIR:-/}" "${UIDGID:-0}" "$@"
 fi
-
 
 mount -o move /dev /mnt/merged/dev
 mount -o move /sys /mnt/merged/sys
 mount -o move /proc /mnt/merged/proc
 
-
-exec /busybox switch_root /mnt/merged/ ${UIDGID:+/.c2v/setuidgid $UIDGID} "$@"
+exec /busybox switch_root /mnt/merged/ "$@"
