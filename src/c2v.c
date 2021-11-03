@@ -354,7 +354,7 @@ static int generate_init_script(guestfs_h *guestfs,
 
 	const char *workdir = cvirt_oci_r_config_get_working_dir(config);
 	if (workdir) {
-		const char workdir_pre[] = "WORKDIR='";
+		const char workdir_pre[] = "_WORKDIR='";
 		res = guestfs_write_append(guestfs, C2V_INIT,
 			workdir_pre, strlen(workdir_pre));
 		if (res < 0) {
@@ -375,7 +375,7 @@ static int generate_init_script(guestfs_h *guestfs,
 
 	const char *user = cvirt_oci_r_config_get_user(config);
 	if (user) {
-		const char user_pre[] = "UIDGID='";
+		const char user_pre[] = "_UIDGID='";
 		res = guestfs_write_append(guestfs, C2V_INIT,
 			user_pre, strlen(user_pre));
 		if (res < 0) {

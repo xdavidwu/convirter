@@ -51,13 +51,13 @@ for i; do
 		ROOT="${i#root=}"
 		;;
 	init=*)
-		INIT="${i#init=}"
+		_CMDLINE_INIT="${i#init=}"
 		;;
 	user=*)
-		USER="${i#user=}"
+		_CMDLINE_UIDGID="${i#user=}"
 		;;
 	workdir=*)
-		WORKDIR_CMDLINE="${i#workdir=}"
+		_CMDLINE_WORKDIR="${i#workdir=}"
 	esac
 done
 
@@ -110,21 +110,21 @@ mount -o move /mnt/modules"$MODULES_PATH" /mnt/merged"$MODULES_PATH"
 set -- /sbin/init
 . /mnt/merged/.c2v/init
 
-[ -n "$INIT" ] && set -- $(echo "$INIT" | xargs /busybox printf '%s\n')
-[ -n "$USER" ] && UIDGID="$USER"
-[ -n "$WORKDIR_CMDLINE" ] && WORKDIR="$(echo "$WORKDIR_CMDLINE" | xargs /busybox printf '%s\n')"
+[ -n "$_CMDLINE_INIT" ] && set -- $(echo "$_CMDLINE_INIT" | xargs /busybox printf '%s\n')
+[ -n "$_CMDLINE_UIDGID" ] && _UIDGID="$_CMDLINE_UIDGID"
+[ -n "$_CMDLINE_WORKDIR" ] && _WORKDIR="$(echo "$_CMDLINE_WORKDIR" | xargs /busybox printf '%s\n')"
 
 # we do not need setuidgid if 0:0
-[ "$UIDGID" = '0' ] || [ "$UIDGID" = '0:0' ] && unset UIDGID
+[ "$_UIDGID" = '0' ] || [ "$_UIDGID" = '0:0' ] && unset _UIDGID
 # we do not need chdir if /
-[ "$WORKDIR" = '/' ] && unset WORKDIR
+[ "$_WORKDIR" = '/' ] && unset _WORKDIR
 
-if [ -n "$UIDGID" ] || [ -n "$WORKDIR" ] ; then
+if [ -n "$_UIDGID" ] || [ -n "$_WORKDIR" ] ; then
 	touch /mnt/merged/.c2v/chdir-setuidgid
 	# See mount(8)
 	mount -o bind /chdir-setuidgid /mnt/merged/.c2v/chdir-setuidgid
 	mount -o remount,bind,ro /chdir-setuidgid /mnt/merged/.c2v/chdir-setuidgid
-	set -- /.c2v/chdir-setuidgid "${WORKDIR:-/}" "${UIDGID:-0}" "$@"
+	set -- /.c2v/chdir-setuidgid "${_WORKDIR:-/}" "${_UIDGID:-0}" "$@"
 fi
 
 mount -o move /dev /mnt/merged/dev
