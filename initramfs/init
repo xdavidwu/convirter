@@ -53,6 +53,11 @@ for i; do
 	init=*)
 		INIT="${i#init=}"
 		;;
+	user=*)
+		USER="${i#user=}"
+		;;
+	workdir=*)
+		WORKDIR_CMDLINE="${i#workdir=}"
 	esac
 done
 
@@ -106,6 +111,8 @@ set -- /sbin/init
 . /mnt/merged/.c2v/init
 
 [ -n "$INIT" ] && set -- $(echo "$INIT" | xargs /busybox printf '%s\n')
+[ -n "$USER" ] && UIDGID="$USER"
+[ -n "$WORKDIR_CMDLINE" ] && WORKDIR="$(echo "$WORKDIR_CMDLINE" | xargs /busybox printf '%s\n')"
 
 # we do not need setuidgid if 0:0
 [ "$UIDGID" = '0' ] || [ "$UIDGID" = '0:0' ] && unset UIDGID
