@@ -90,8 +90,10 @@ static int parse_options(struct v2c_state *state, int argc, char *argv[]) {
 			} else {
 				return -EINVAL;
 			}
+			break;
 		case 2:
 			state->config.disable_systemd_cleanup = true;
+			break;
 		}
 	}
 	return 0;
