@@ -118,6 +118,30 @@ err:
 	return -res;
 }
 
+int cvirt_oci_config_set_entrypoint(struct cvirt_oci_config *config, char *const entrypoint[]) {
+	int res = config_ensure_config_object(config);
+	if (res < 0) {
+		return res;
+	}
+	struct json_object *entrypoint_arr = json_object_new_array();
+	if (!entrypoint_arr) {
+		return -errno;
+	}
+	for (int i = 0; entrypoint[i]; i++) {
+		struct json_object *str = json_object_new_string(entrypoint[i]);
+		if (!str) {
+			goto err;
+		}
+		json_object_array_add(entrypoint_arr, str);
+	}
+	json_object_object_add(config->config, "Entrypoint", entrypoint_arr);
+	return 0;
+err:
+	res = errno;
+	json_object_put(entrypoint_arr);
+	return -res;
+}
+
 int cvirt_oci_config_set_stop_signal(struct cvirt_oci_config *config, const char *signal) {
 	int res = config_ensure_config_object(config);
 	if (res < 0) {

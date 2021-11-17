@@ -12,6 +12,8 @@ int cvirt_oci_config_set_user(struct cvirt_oci_config *config, const char *user)
 
 int cvirt_oci_config_set_cmd(struct cvirt_oci_config *config, char *const cmd[]);
 
+int cvirt_oci_config_set_entrypoint(struct cvirt_oci_config *config, char *const entrypoint[]);
+
 int cvirt_oci_config_set_stop_signal(struct cvirt_oci_config *config, const char *signal);
 
 int cvirt_oci_config_close(struct cvirt_oci_config *config);
