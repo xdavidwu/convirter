@@ -20,20 +20,28 @@
 #include <guestfs.h>
 
 #include "../common/guestfs.h"
+#include "../common/common-config.h"
+#include "list.h"
 
-static const char usage[] =
-	"Usage: %s [OPTION]... INPUT OUTPUT\n"
-	"Convert a VM image into OCI-compatible container image.\n"
-	"\n"
-	"      --compression=ALGO[:LEVEL]  Compress layers with algorithm ALGO\n"
-	"                                  Available algorithms: zstd, gzip, none\n"
-	"                                  Defaults to zstd\n"
-	"      --no-systemd-cleanup        Disable removing systemd units that will\n"
-	"                                  likely fail and is unneeded in containers\n";
+static const char usage[] = "\
+Usage: %s [OPTION]... INPUT OUTPUT\n\
+Convert a VM image into OCI-compatible container image.\n\
+\n\
+      --compression=ALGO[:LEVEL]  Compress layers with algorithm ALGO\n\
+                                  Available algorithms: zstd, gzip, none\n\
+                                  Defaults to zstd\n\
+      --no-systemd-cleanup        Disable removing systemd units that will\n\
+                                  likely fail and is unneeded in containers\n\
+\n\
+Options below set respective config of output container image:\n"
+COMMON_EXEC_CONFIG_OPTIONS_HELP;
+
+static const int common_exec_config_start = 128;
 
 static const struct option long_options[] = {
 	{"compression",	required_argument,	NULL,	1},
 	{"no-systemd-cleanup",	no_argument,	NULL,	2},
+	COMMON_EXEC_CONFIG_LONG_OPTIONS(common_exec_config_start),
 	{0},
 };
 
@@ -61,12 +69,21 @@ struct v2c_state {
 		enum cvirt_oci_layer_compression compression;
 		int compression_level;
 		bool disable_systemd_cleanup;
+		struct common_exec_config exec;
 	} config;
 };
 
 static int parse_options(struct v2c_state *state, int argc, char *argv[]) {
 	int opt;
 	while ((opt = getopt_long(argc, argv, "", long_options, NULL)) != -1) {
+		if (opt >= common_exec_config_start) {
+			int res = parse_common_exec_opt(&state->config.exec,
+				opt - common_exec_config_start);
+			if (res < 0) {
+				return res;
+			}
+			continue;
+		}
 		switch (opt) {
 		case '?':
 			return -EINVAL;
@@ -328,28 +345,66 @@ static int cleanup_systemd(struct v2c_state *state) {
 	return 0;
 }
 
-static int setup_init_config(struct v2c_state *state, struct cvirt_oci_config *config) {
-	int res = cvirt_oci_config_set_user(config, "0:0");
-	if (res < 0) {
-		return res;
+static int setup_config(struct v2c_state *state, struct cvirt_oci_config *config) {
+	int res;
+	if (state->config.exec.user) {
+		res = cvirt_oci_config_set_user(config, state->config.exec.user);
+		if (res < 0) {
+			return res;
+		}
 	}
-	char *const cmd[] = {
+	char *const default_cmd[] = {
 		"/sbin/init",
 		NULL,
 	};
-	res = cvirt_oci_config_set_cmd(config, cmd);
+	res = cvirt_oci_config_set_cmd(config, state->config.exec.cmd ?
+			(char *const *)state->config.exec.cmd : default_cmd);
 	if (res < 0) {
 		return res;
 	}
-	char *link = guestfs_readlink(state->guestfs, "/sbin/init");
-	if (link) {
-		int l = strlen(link);
-		if (l >= 7 && !strncmp(&link[l - 7], "systemd", 7)) {
-			return cvirt_oci_config_set_stop_signal(config, "SIGRTMIN+3");
+
+	if (state->config.exec.entrypoint) {
+		res = cvirt_oci_config_set_entrypoint(config,
+				(char *const *)state->config.exec.entrypoint);
+		if (res < 0) {
+			return res;
 		}
-		free(link);
 	}
-	return cvirt_oci_config_set_stop_signal(config, "SIGPWR");
+
+	if (state->config.exec.env) {
+		for (int i = 0; state->config.exec.env[i]; i++) {
+			res = cvirt_oci_config_add_env(config, state->config.exec.env[i]);
+			if (res < 0) {
+				return res;
+			}
+		}
+	}
+
+	if (state->config.exec.workdir) {
+		res = cvirt_oci_config_set_working_dir(config, state->config.exec.workdir);
+		if (res < 0) {
+			return res;
+		}
+	}
+
+	if (!state->config.exec.cmd && !state->config.exec.entrypoint) {
+		char *link = guestfs_readlink(state->guestfs, "/sbin/init");
+		if (link) {
+			int l = strlen(link);
+			if (l >= 7 && !strncmp(&link[l - 7], "systemd", 7)) {
+				res = cvirt_oci_config_set_stop_signal(config, "SIGRTMIN+3");
+				if (res < 0) {
+					return res;
+				}
+			}
+			free(link);
+		}
+		res = cvirt_oci_config_set_stop_signal(config, "SIGPWR");
+		if (res < 0) {
+			return res;
+		}
+	}
+	return res;
 }
 
 int main(int argc, char *argv[]) {
@@ -421,7 +476,7 @@ int main(int argc, char *argv[]) {
 
 	struct cvirt_oci_config *config = cvirt_oci_config_new();
 	cvirt_oci_config_add_layer(config, layer);
-	setup_init_config(&state, config);
+	setup_config(&state, config);
 	cvirt_oci_config_close(config);
 
 	guestfs_umount_all(state.guestfs);
