@@ -162,6 +162,19 @@ int cvirt_oci_config_add_env(struct cvirt_oci_config *config, const char *env) {
 	return 0;
 }
 
+int cvirt_oci_config_set_working_dir(struct cvirt_oci_config *config, const char *workdir) {
+	int res = config_ensure_config_object(config);
+	if (res < 0) {
+		return res;
+	}
+	struct json_object *workdir_obj = json_object_new_string(workdir);
+	if (!workdir_obj) {
+		return -errno;
+	}
+	json_object_object_add(config->config, "WorkingDir", workdir_obj);
+	return 0;
+}
+
 int cvirt_oci_config_set_stop_signal(struct cvirt_oci_config *config, const char *signal) {
 	int res = config_ensure_config_object(config);
 	if (res < 0) {

@@ -16,6 +16,8 @@ int cvirt_oci_config_set_entrypoint(struct cvirt_oci_config *config, char *const
 
 int cvirt_oci_config_add_env(struct cvirt_oci_config *config, const char *env);
 
+int cvirt_oci_config_set_working_dir(struct cvirt_oci_config *config, const char *workdir);
+
 int cvirt_oci_config_set_stop_signal(struct cvirt_oci_config *config, const char *signal);
 
 int cvirt_oci_config_close(struct cvirt_oci_config *config);
