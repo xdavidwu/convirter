@@ -142,6 +142,26 @@ err:
 	return -res;
 }
 
+int cvirt_oci_config_add_env(struct cvirt_oci_config *config, const char *env) {
+	int res = config_ensure_config_object(config);
+	if (res < 0) {
+		return res;
+	}
+	if (!config->config_env) {
+		config->config_env = json_object_new_array();
+		if (!config->config_env) {
+			return -errno;
+		}
+		json_object_object_add(config->config, "Env", config->config_env);
+	}
+	struct json_object *str = json_object_new_string(env);
+	if (!str) {
+		return -errno;
+	}
+	json_object_array_add(config->config_env, str);
+	return 0;
+}
+
 int cvirt_oci_config_set_stop_signal(struct cvirt_oci_config *config, const char *signal) {
 	int res = config_ensure_config_object(config);
 	if (res < 0) {
