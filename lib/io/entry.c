@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/sysmacros.h>
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -136,6 +137,28 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 			inode->children[i].inode = cvirt_xcalloc(1, sizeof(struct cvirt_io_inode));
 		}
 		copy_stat_from_guestfs_statns(inode->children[i].inode, &stats->val[i]);
+		if (stats->val[i].st_ino == 2 && major(stats->val[i].st_dev) == 0 &&
+				stats->val[i].st_mode == (S_IFDIR | S_IRWXU |
+				S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) &&
+				stats->val[i].st_mtime_sec == stats->val[i].st_ctime_sec &&
+				stats->val[i].st_atime_sec == stats->val[i].st_mtime_sec &&
+				stats->val[i].st_mtime_nsec == stats->val[i].st_ctime_nsec &&
+				stats->val[i].st_atime_nsec == stats->val[i].st_mtime_nsec) {
+			/*
+			 * On btrfs, inode number == 2 (BTRFS_EMPTY_SUBVOL_DIR_OBJECTID)
+			 * is read-only empty dir created at run-time, mode 0755,
+			 * timestamp all the same as ctime, no xattr support.
+			 *
+			 * Reset timestamps since they are temporary and not useful, then skip
+			 */
+			inode->children[i].inode->stat.st_atim.tv_sec = 0;
+			inode->children[i].inode->stat.st_atim.tv_nsec = 0;
+			inode->children[i].inode->stat.st_mtim.tv_sec = 0;
+			inode->children[i].inode->stat.st_mtim.tv_nsec = 0;
+			inode->children[i].inode->stat.st_ctim.tv_sec = 0;
+			inode->children[i].inode->stat.st_ctim.tv_nsec = 0;
+			continue;
+		}
 
 		strcpy(&abs_path[common_len + 1], ls[i]);
 
