@@ -6,7 +6,9 @@
 #include <convirter/oci-r/index.h>
 #include <convirter/oci-r/layer.h>
 #include <convirter/oci-r/manifest.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <guestfs.h>
 #include <libgen.h>
 #include <stdbool.h>
@@ -18,11 +20,19 @@
 
 #include "../common/guestfs.h"
 
+static const char usage[] = "\
+Usage: %s [OPTION]... INPUT OUTPUT\n\
+Convert OCI container image to VM disk image for use with kernel and initramfs\n\
+from c2v-mkboot.\n";
+
+static const struct option long_options[] = {
+	{0},
+};
+
 static const int bufsz = 4000 * 1024;
 
 #define C2V_DIR	"/.c2v"
 #define C2V_INIT	C2V_DIR "/init"
-#define C2V_BUSYBOX	C2V_DIR "/busybox"
 #define C2V_LAYERS	C2V_DIR "/layers"
 
 struct c2v_state {
@@ -32,6 +42,17 @@ struct c2v_state {
 	struct {
 	} config;
 };
+
+static int parse_options(struct c2v_state *state, int argc, char *argv[]) {
+	int opt;
+	while ((opt = getopt_long(argc, argv, "", long_options, NULL)) != -1) {
+		switch (opt) {
+		case '?':
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
 
 static int set_attr(struct c2v_state *state, const char *path,
 		const struct stat *stat) {
@@ -467,7 +488,9 @@ static void restore_mtime(struct c2v_state *state, struct cvirt_io_entry *entry,
 }
 
 int main(int argc, char *argv[]) {
-	if (argc != 3) {
+	struct c2v_state global_state = {0};
+	if (parse_options(&global_state, argc, argv) < 0 || argc - optind != 2) {
+		fprintf(stderr, usage, argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
@@ -497,7 +520,6 @@ int main(int argc, char *argv[]) {
 		cvirt_oci_r_layer_destroy(layer);
 	}
 
-	struct c2v_state global_state = {0};
 	size_t image_size = (needed * 2) < 114294784 ? 114294784 : (needed * 2);
 	global_state.guestfs = create_qcow2_btrfs_image(argv[2], image_size);
 	if (!global_state.guestfs) {
