@@ -36,7 +36,7 @@ static int set_attr(guestfs_h *guestfs, const char *path,
 	if (res < 0) {
 		return res;
 	}
-	if ((!S_ISLNK(stat->st_mode)) && (stat->st_mode & 0700)) {
+	if ((!S_ISLNK(stat->st_mode)) && (stat->st_mode & 07000)) {
 		guestfs_chmod(guestfs, stat->st_mode & 07777, path);
 	}
 	const char *name;
