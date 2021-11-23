@@ -47,6 +47,8 @@ struct c2v_state {
 	struct archive *archive;
 	struct archive_entry *archive_entry;
 	struct {
+		time_t source_date_epoch;
+		bool set_modification_epoch;
 		struct common_exec_config exec;
 	} config;
 };
@@ -519,7 +521,28 @@ static int generate_init_script(struct c2v_state *state,
 	}
 
 	res = guestfs_chmod(state->guestfs, 0400, C2V_INIT);
-	return 0;
+	if (res < 0) {
+		return res;
+	}
+
+	if (state->config.set_modification_epoch) {
+		res = guestfs_utimens(state->guestfs, C2V_INIT,
+			state->config.source_date_epoch, 0,
+			state->config.source_date_epoch, 0);
+		if (res < 0) {
+			return res;
+		}
+		res = guestfs_utimens(state->guestfs, C2V_DIR,
+			state->config.source_date_epoch, 0,
+			state->config.source_date_epoch, 0);
+		if (res < 0) {
+			return res;
+		}
+		res = guestfs_utimens(state->guestfs, "/",
+			state->config.source_date_epoch, 0,
+			state->config.source_date_epoch, 0);
+	}
+	return res;
 }
 
 static int block_sz = 4096;
@@ -562,6 +585,12 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	char *source_date_epoch_env = getenv("SOURCE_DATE_EPOCH");
+	if (source_date_epoch_env) {
+		global_state.config.set_modification_epoch = true;
+		global_state.config.source_date_epoch = atoll(source_date_epoch_env);
+	}
+
 	int fd = open(argv[optind], O_RDONLY | O_CLOEXEC);
 	assert(fd != -1);
 	struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(fd);
@@ -597,9 +626,31 @@ int main(int argc, char *argv[]) {
 	
 	assert(guestfs_mkdir_mode(global_state.guestfs, C2V_DIR, 0500) >= 0);
 	assert(guestfs_mkdir_mode(global_state.guestfs, C2V_LAYERS, 0500) >= 0);
+	if (global_state.config.set_modification_epoch) {
+		assert(guestfs_utimens(global_state.guestfs, C2V_LAYERS,
+			global_state.config.source_date_epoch, 0,
+			global_state.config.source_date_epoch, 0) >= 0);
+		assert(guestfs_utimens(global_state.guestfs, C2V_DIR,
+			global_state.config.source_date_epoch, 0,
+			global_state.config.source_date_epoch, 0) >= 0);
+		assert(guestfs_utimens(global_state.guestfs, "/",
+			global_state.config.source_date_epoch, 0,
+			global_state.config.source_date_epoch, 0) >= 0);
+	}
 	assert(guestfs_btrfs_subvolume_snapshot_opts(global_state.guestfs, "/",
 		C2V_LAYERS "/base",
 		GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
+	if (global_state.config.set_modification_epoch) {
+		assert(guestfs_utimens(global_state.guestfs, C2V_LAYERS,
+			global_state.config.source_date_epoch, 0,
+			global_state.config.source_date_epoch, 0) >= 0);
+		assert(guestfs_utimens(global_state.guestfs, C2V_DIR,
+			global_state.config.source_date_epoch, 0,
+			global_state.config.source_date_epoch, 0) >= 0);
+		assert(guestfs_utimens(global_state.guestfs, "/",
+			global_state.config.source_date_epoch, 0,
+			global_state.config.source_date_epoch, 0) >= 0);
+	}
 
 	for (int i = 0; i < len; i++) {
 		const char *layer_digest = cvirt_oci_r_manifest_get_layer_digest(manifest, i);
@@ -629,6 +680,17 @@ int main(int argc, char *argv[]) {
 		assert(guestfs_btrfs_subvolume_snapshot_opts(global_state.guestfs, "/",
 			snapshot_dest,
 			GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
+		if (global_state.config.set_modification_epoch) {
+			assert(guestfs_utimens(global_state.guestfs, C2V_LAYERS,
+				global_state.config.source_date_epoch, 0,
+				global_state.config.source_date_epoch, 0) >= 0);
+			assert(guestfs_utimens(global_state.guestfs, C2V_DIR,
+				global_state.config.source_date_epoch, 0,
+				global_state.config.source_date_epoch, 0) >= 0);
+			assert(guestfs_utimens(global_state.guestfs, "/",
+				global_state.config.source_date_epoch, 0,
+				global_state.config.source_date_epoch, 0) >= 0);
+		}
 		free(snapshot_dest);
 	}
 	struct cvirt_oci_r_config *config =
