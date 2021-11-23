@@ -19,13 +19,20 @@
 #include <sys/sysmacros.h>
 
 #include "../common/guestfs.h"
+#include "../common/common-config.h"
 
 static const char usage[] = "\
 Usage: %s [OPTION]... INPUT OUTPUT\n\
 Convert OCI container image to VM disk image for use with kernel and initramfs\n\
-from c2v-mkboot.\n";
+from c2v-mkboot.\n\
+\n\
+Options below overrides what is read from container image:\n"
+COMMON_EXEC_CONFIG_OPTIONS_HELP;
+
+static const int common_exec_config_start = 128;
 
 static const struct option long_options[] = {
+	COMMON_EXEC_CONFIG_LONG_OPTIONS(128),
 	{0},
 };
 
@@ -40,12 +47,21 @@ struct c2v_state {
 	struct archive *archive;
 	struct archive_entry *archive_entry;
 	struct {
+		struct common_exec_config exec;
 	} config;
 };
 
 static int parse_options(struct c2v_state *state, int argc, char *argv[]) {
 	int opt;
 	while ((opt = getopt_long(argc, argv, "", long_options, NULL)) != -1) {
+		if (opt >= common_exec_config_start) {
+			int res = parse_common_exec_opt(&state->config.exec,
+				opt - common_exec_config_start);
+			if (res < 0) {
+				return res;
+			}
+			continue;
+		}
 		switch (opt) {
 		case '?':
 			return -EINVAL;
@@ -379,7 +395,28 @@ static int generate_init_script(struct c2v_state *state,
 		}
 	}
 
-	const char *workdir = cvirt_oci_r_config_get_working_dir(config);
+	if (state->config.exec.env) {
+		for (int i = 0; state->config.exec.env[i]; i++) {
+			const char export_pre[] = "export ";
+			res = guestfs_write_append(state->guestfs, C2V_INIT,
+				export_pre, strlen(export_pre));
+			if (res < 0) {
+				return res;
+			}
+			res = append_quoted_string(state, C2V_INIT,
+				state->config.exec.env[i]);
+			if (res < 0) {
+				return res;
+			}
+			res = guestfs_write_append(state->guestfs, C2V_INIT, "\n", 1);
+			if (res < 0) {
+				return res;
+			}
+		}
+	}
+
+	const char *workdir = state->config.exec.workdir ? state->config.exec.workdir :
+		cvirt_oci_r_config_get_working_dir(config);
 	if (workdir) {
 		const char workdir_pre[] = "_WORKDIR=";
 		res = guestfs_write_append(state->guestfs, C2V_INIT,
@@ -397,7 +434,8 @@ static int generate_init_script(struct c2v_state *state,
 		}
 	}
 
-	const char *user = cvirt_oci_r_config_get_user(config);
+	const char *user = state->config.exec.user ? state->config.exec.user :
+		cvirt_oci_r_config_get_user(config);
 	if (user) {
 		const char user_pre[] = "_UIDGID=";
 		res = guestfs_write_append(state->guestfs, C2V_INIT,
@@ -423,26 +461,55 @@ static int generate_init_script(struct c2v_state *state,
 		if (res < 0) {
 			return res;
 		}
-		for (int i = 0; i < entrypoint_len; i++) {
-			const char *part = cvirt_oci_r_config_get_entrypoint_part(config, i);
-			res = append_quoted_string(state, C2V_INIT, part);
-			if (res < 0) {
-				return res;
+		if (state->config.exec.entrypoint) {
+			for (int i = 0; state->config.exec.entrypoint[i]; i++) {
+				res = append_quoted_string(state, C2V_INIT,
+					state->config.exec.entrypoint[i]);
+				if (res < 0) {
+					return res;
+				}
+				res = guestfs_write_append(state->guestfs, C2V_INIT, " ", 1);
+				if (res < 0) {
+					return res;
+				}
 			}
-			res = guestfs_write_append(state->guestfs, C2V_INIT, " ", 1);
-			if (res < 0) {
-				return res;
+		} else {
+			for (int i = 0; i < entrypoint_len; i++) {
+				const char *part = cvirt_oci_r_config_get_entrypoint_part(config, i);
+				res = append_quoted_string(state, C2V_INIT, part);
+				if (res < 0) {
+					return res;
+				}
+				res = guestfs_write_append(state->guestfs, C2V_INIT, " ", 1);
+				if (res < 0) {
+					return res;
+				}
 			}
 		}
-		for (int i = 0; i < cmd_len; i++) {
-			const char *part = cvirt_oci_r_config_get_cmd_part(config, i);
-			res = append_quoted_string(state, C2V_INIT, part);
-			if (res < 0) {
-				return res;
+
+		if (state->config.exec.cmd) {
+			for (int i = 0; state->config.exec.cmd[i]; i++) {
+				res = append_quoted_string(state, C2V_INIT,
+					state->config.exec.cmd[i]);
+				if (res < 0) {
+					return res;
+				}
+				res = guestfs_write_append(state->guestfs, C2V_INIT, " ", 1);
+				if (res < 0) {
+					return res;
+				}
 			}
-			res = guestfs_write_append(state->guestfs, C2V_INIT, " ", 1);
-			if (res < 0) {
-				return res;
+		} else {
+			for (int i = 0; i < cmd_len; i++) {
+				const char *part = cvirt_oci_r_config_get_cmd_part(config, i);
+				res = append_quoted_string(state, C2V_INIT, part);
+				if (res < 0) {
+					return res;
+				}
+				res = guestfs_write_append(state->guestfs, C2V_INIT, " ", 1);
+				if (res < 0) {
+					return res;
+				}
 			}
 		}
 		res = guestfs_write_append(state->guestfs, C2V_INIT, "\n", 1);
@@ -495,7 +562,7 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
-	int fd = open(argv[1], O_RDONLY | O_CLOEXEC);
+	int fd = open(argv[optind], O_RDONLY | O_CLOEXEC);
 	assert(fd != -1);
 	struct cvirt_oci_r_index *index = cvirt_oci_r_index_from_archive(fd);
 	const char *manifest_digest = cvirt_oci_r_index_get_native_manifest_digest(index);
@@ -522,7 +589,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	size_t image_size = (needed * 2) < 114294784 ? 114294784 : (needed * 2);
-	global_state.guestfs = create_qcow2_btrfs_image(argv[2], image_size);
+	global_state.guestfs = create_qcow2_btrfs_image(argv[optind + 1], image_size);
 	if (!global_state.guestfs) {
 		exit(EXIT_FAILURE);
 	}
