@@ -25,35 +25,43 @@ static const int bufsz = 4000 * 1024;
 #define C2V_BUSYBOX	C2V_DIR "/busybox"
 #define C2V_LAYERS	C2V_DIR "/layers"
 
-static int set_attr(guestfs_h *guestfs, const char *path,
-		struct archive_entry *entry, const struct stat *stat) {
-	int res = guestfs_lchown(guestfs, stat->st_uid, stat->st_gid, path);
+struct c2v_state {
+	guestfs_h *guestfs;
+	struct archive *archive;
+	struct archive_entry *archive_entry;
+	struct {
+	} config;
+};
+
+static int set_attr(struct c2v_state *state, const char *path,
+		const struct stat *stat) {
+	int res = guestfs_lchown(state->guestfs, stat->st_uid, stat->st_gid, path);
 	if (res < 0) {
 		return res;
 	}
-	res = guestfs_utimens(guestfs, path, stat->st_atim.tv_sec,
+	res = guestfs_utimens(state->guestfs, path, stat->st_atim.tv_sec,
 		stat->st_atim.tv_nsec, stat->st_mtim.tv_sec, stat->st_mtim.tv_nsec);
 	if (res < 0) {
 		return res;
 	}
 	if ((!S_ISLNK(stat->st_mode)) && (stat->st_mode & 07000)) {
-		guestfs_chmod(guestfs, stat->st_mode & 07777, path);
+		guestfs_chmod(state->guestfs, stat->st_mode & 07777, path);
 	}
 	const char *name;
 	const void *val;
 	size_t sz;
-	int count = archive_entry_xattr_count(entry);
-	archive_entry_xattr_reset(entry);
+	int count = archive_entry_xattr_count(state->archive_entry);
+	archive_entry_xattr_reset(state->archive_entry);
 	for (int i = 0; i < count; i++) {
-		archive_entry_xattr_next(entry, &name, &val, &sz);
-		guestfs_lsetxattr(guestfs, name, val, sz, path);
+		archive_entry_xattr_next(state->archive_entry, &name, &val, &sz);
+		guestfs_lsetxattr(state->guestfs, name, val, sz, path);
 	}
 	return res;
 }
 
-static int dump_file(guestfs_h *guestfs, struct archive *archive,
-		const char *path, const struct stat *stat) {
-	int res = guestfs_truncate_size(guestfs, path, stat->st_size);
+static int dump_file(struct c2v_state *state, const char *path,
+		const struct stat *stat) {
+	int res = guestfs_truncate_size(state->guestfs, path, stat->st_size);
 	if (res < 0) {
 		return res;
 	}
@@ -61,11 +69,11 @@ static int dump_file(guestfs_h *guestfs, struct archive *archive,
 	const void *buf;
 	size_t size;
 	off_t offset;
-	while (archive_read_data_block(archive, &buf, &size, &offset) != ARCHIVE_EOF) {
+	while (archive_read_data_block(state->archive, &buf, &size, &offset) != ARCHIVE_EOF) {
 		cbuf = buf;
 		int buf_offset = 0;
 		while (size > bufsz) {
-			res = guestfs_pwrite(guestfs, path, &cbuf[buf_offset], bufsz, offset);
+			res = guestfs_pwrite(state->guestfs, path, &cbuf[buf_offset], bufsz, offset);
 			if (res < 0) {
 				return res;
 			}
@@ -73,7 +81,7 @@ static int dump_file(guestfs_h *guestfs, struct archive *archive,
 			buf_offset += bufsz;
 			size -= bufsz;
 		}
-		res = guestfs_pwrite(guestfs, path, &cbuf[buf_offset], size, offset);
+		res = guestfs_pwrite(state->guestfs, path, &cbuf[buf_offset], size, offset);
 		if (res < 0) {
 			return res;
 		}
@@ -81,22 +89,21 @@ static int dump_file(guestfs_h *guestfs, struct archive *archive,
 	return res;
 }
 
-static int apply_whiteouts(guestfs_h *guestfs, struct archive *archive) {
-	struct archive_entry *entry;
-	int res = archive_read_next_header(archive, &entry);
+static int apply_whiteouts(struct c2v_state *state) {
+	int res = archive_read_next_header(state->archive, &state->archive_entry);
 	while (res != ARCHIVE_EOF && res != ARCHIVE_FATAL) {
 		char *basename_dup = NULL, *dirname_dup = NULL;
 		if (res == ARCHIVE_WARN) {
 			fprintf(stderr, "warning: %s: %s\n",
-				archive_entry_pathname(entry),
-				archive_error_string(archive));
+				archive_entry_pathname(state->archive_entry),
+				archive_error_string(state->archive));
 		} else if (res == ARCHIVE_RETRY) {
 			fprintf(stderr, "warning: %s: %s, retry\n",
-				archive_entry_pathname(entry),
-				archive_error_string(archive));
+				archive_entry_pathname(state->archive_entry),
+				archive_error_string(state->archive));
 			goto next;
 		}
-		const char *path = archive_entry_pathname(entry);
+		const char *path = archive_entry_pathname(state->archive_entry);
 		if (!strncmp(path, ".c2v/", 4) || !strcmp(path, ".wh..c2v")) {
 			goto next;
 		}
@@ -123,7 +130,7 @@ static int apply_whiteouts(guestfs_h *guestfs, struct archive *archive) {
 			}
 
 			int i = 0;
-			char **ls = guestfs_ls(guestfs, abs_path);
+			char **ls = guestfs_ls(state->guestfs, abs_path);
 			if (!ls) {
 				goto opq_cleanup;
 			}
@@ -146,7 +153,7 @@ static int apply_whiteouts(guestfs_h *guestfs, struct archive *archive) {
 					strcpy(&full[1], ls[i]);
 				}
 				free(ls[i]);
-				int res = guestfs_rm_rf(guestfs, full);
+				int res = guestfs_rm_rf(state->guestfs, full);
 				free(full);
 				if (res < 0) {
 					return res;
@@ -167,7 +174,7 @@ static int apply_whiteouts(guestfs_h *guestfs, struct archive *archive) {
 		strcpy(&full[1], dir);
 		full[dir_len + 1] = '/';
 		strcpy(&full[dir_len + 2], &name[4]);
-		res = guestfs_rm_rf(guestfs, full);
+		res = guestfs_rm_rf(state->guestfs, full);
 		free(full);
 		if (res < 0) {
 			return res;
@@ -175,30 +182,29 @@ static int apply_whiteouts(guestfs_h *guestfs, struct archive *archive) {
 next:
 		free(basename_dup);
 		free(dirname_dup);
-		res = archive_read_next_header(archive, &entry);
+		res = archive_read_next_header(state->archive, &state->archive_entry);
 	}
 	if (res == ARCHIVE_FATAL) {
-		fprintf(stderr, "fatal: %s\n", archive_error_string(archive));
-		return -archive_errno(archive);
+		fprintf(stderr, "fatal: %s\n", archive_error_string(state->archive));
+		return -archive_errno(state->archive);
 	}
 	return 0;
 }
 
-static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
-	struct archive_entry *entry;
-	int res = archive_read_next_header(archive, &entry);
+static int dump_layer(struct c2v_state *state) {
+	int res = archive_read_next_header(state->archive, &state->archive_entry);
 	while (res != ARCHIVE_EOF && res != ARCHIVE_FATAL) {
 		if (res == ARCHIVE_WARN) {
 			fprintf(stderr, "warning: %s: %s\n",
-				archive_entry_pathname(entry),
-				archive_error_string(archive));
+				archive_entry_pathname(state->archive_entry),
+				archive_error_string(state->archive));
 		} else if (res == ARCHIVE_RETRY) {
 			fprintf(stderr, "warning: %s: %s, retry\n",
-				archive_entry_pathname(entry),
-				archive_error_string(archive));
+				archive_entry_pathname(state->archive_entry),
+				archive_error_string(state->archive));
 			goto next;
 		}
-		const char *path = archive_entry_pathname(entry);
+		const char *path = archive_entry_pathname(state->archive_entry);
 		if (!strcmp(path, ".c2v")) {
 			fprintf(stderr, "warning: layer: skipping our special path\n");
 			goto next;
@@ -219,13 +225,13 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 		abs_path[0] = '/';
 		strcpy(&abs_path[1], path);
 
-		const char *hardlink = archive_entry_hardlink(entry);
+		const char *hardlink = archive_entry_hardlink(state->archive_entry);
 		if (hardlink) {
 			char *abs_target = calloc(2 + strlen(hardlink),
 				sizeof(char));
 			abs_target[0] = '/';
 			strcpy(&abs_target[1], hardlink);
-			int res = guestfs_ln(guestfs, abs_target, abs_path);
+			int res = guestfs_ln(state->guestfs, abs_target, abs_path);
 			if (res < 0) {
 				return res;
 			}
@@ -234,42 +240,43 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 			goto next;
 		}
 
-		const struct stat *stat = archive_entry_stat(entry);
+		const struct stat *stat = archive_entry_stat(state->archive_entry);
 
 		if ((stat->st_mode & S_IFMT) != S_IFDIR) {
 			// overwrites
-			assert(guestfs_rm_rf(guestfs, abs_path) >= 0);
+			assert(guestfs_rm_rf(state->guestfs, abs_path) >= 0);
 		} else {
 			// try to remove non-dir if exists
-			guestfs_rm_f(guestfs, abs_path);
+			guestfs_rm_f(state->guestfs, abs_path);
 		}
 
 		switch (stat->st_mode & S_IFMT) {
 		case S_IFLNK:
-			res = guestfs_ln_s(guestfs, archive_entry_symlink(entry), abs_path);
+			res = guestfs_ln_s(state->guestfs,
+				archive_entry_symlink(state->archive_entry), abs_path);
 			break;
 		case S_IFREG:
-			res = guestfs_mknod(guestfs, stat->st_mode, 0, 0,
+			res = guestfs_mknod(state->guestfs, stat->st_mode, 0, 0,
 				abs_path);
 			if (res < 0) {
 				break;
 			}
-			res = dump_file(guestfs, archive, abs_path, stat);
+			res = dump_file(state, abs_path, stat);
 			break;
 		case S_IFDIR:
-			if (guestfs_is_dir(guestfs, abs_path)) {
-				res = guestfs_chmod(guestfs, stat->st_mode,
-					abs_path);
+			if (guestfs_is_dir(state->guestfs, abs_path)) {
+				res = guestfs_chmod(state->guestfs,
+					stat->st_mode, abs_path);
 			} else {
-				res = guestfs_mkdir_mode(guestfs, abs_path,
-					stat->st_mode);
+				res = guestfs_mkdir_mode(state->guestfs,
+					abs_path, stat->st_mode);
 			}
 			break;
 		case S_IFSOCK:
 		case S_IFBLK:
 		case S_IFCHR:
 		case S_IFIFO:
-			res = guestfs_mknod(guestfs, stat->st_mode,
+			res = guestfs_mknod(state->guestfs, stat->st_mode,
 				major(stat->st_rdev), minor(stat->st_rdev),
 				abs_path);
 			break;
@@ -281,36 +288,36 @@ static int dump_layer(guestfs_h *guestfs, struct archive *archive) {
 		if (res < 0) {
 			return res;
 		}
-		res = set_attr(guestfs, abs_path, entry, stat);
+		res = set_attr(state, abs_path, stat);
 		if (res < 0) {
 			return res;
 		}
 		free(abs_path);
 next:
-		res = archive_read_next_header(archive, &entry);
+		res = archive_read_next_header(state->archive, &state->archive_entry);
 	}
 	if (res == ARCHIVE_FATAL) {
-		fprintf(stderr, "fatal: %s\n", archive_error_string(archive));
-		return -archive_errno(archive);
+		fprintf(stderr, "fatal: %s\n", archive_error_string(state->archive));
+		return -archive_errno(state->archive);
 	}
 	return 0;
 }
 
-static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
+static int append_quote_escaped_string(struct c2v_state *state, const char *path,
 		const char *string) {
 	int len = strlen(string), k = 0, res = 0;
 	for (int j = 0; j < len; j++) {
 		if (string[j] == '\'') {
 			int part_len = j - k;
 			if (part_len) {
-				res = guestfs_write_append(guestfs, path,
+				res = guestfs_write_append(state->guestfs, path,
 					&string[k], part_len);
 				if (res < 0) {
 					return res;
 				}
 			}
-			res = guestfs_write_append(guestfs,
-				path, "'\"'\"'", 5);
+			res = guestfs_write_append(state->guestfs, path,
+				"'\"'\"'", 5);
 			if (res < 0) {
 				return res;
 			}
@@ -319,7 +326,7 @@ static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
 	}
 	int part_len = len - k;
 	if (part_len) {
-		res = guestfs_write_append(guestfs, path, &string[k], part_len);
+		res = guestfs_write_append(state->guestfs, path, &string[k], part_len);
 		if (res < 0) {
 			return res;
 		}
@@ -327,25 +334,25 @@ static int append_quote_escaped_string(guestfs_h *guestfs, const char *path,
 	return 0;
 }
 
-static int generate_init_script(guestfs_h *guestfs,
+static int generate_init_script(struct c2v_state *state,
 		struct cvirt_oci_r_config *config) {
 	int res;
 	int env_count = cvirt_oci_r_config_get_env_length(config);
 	for (int i = 0; i < env_count; i++) {
 		const char export_pre[] = "export '";
-		res = guestfs_write_append(guestfs, C2V_INIT,
+		res = guestfs_write_append(state->guestfs, C2V_INIT,
 			export_pre, strlen(export_pre));
 		if (res < 0) {
 			return res;
 		}
 		const char *env = cvirt_oci_r_config_get_env(config, i);
-		res = append_quote_escaped_string(guestfs, C2V_INIT, env);
+		res = append_quote_escaped_string(state, C2V_INIT, env);
 		if (res < 0) {
 			return res;
 		}
 		const char export_post[] =
 			"'\n";
-		res = guestfs_write_append(guestfs, C2V_INIT,
+		res = guestfs_write_append(state->guestfs, C2V_INIT,
 			export_post, strlen(export_post));
 		if (res < 0) {
 			return res;
@@ -355,18 +362,18 @@ static int generate_init_script(guestfs_h *guestfs,
 	const char *workdir = cvirt_oci_r_config_get_working_dir(config);
 	if (workdir) {
 		const char workdir_pre[] = "_WORKDIR='";
-		res = guestfs_write_append(guestfs, C2V_INIT,
+		res = guestfs_write_append(state->guestfs, C2V_INIT,
 			workdir_pre, strlen(workdir_pre));
 		if (res < 0) {
 			return res;
 		}
-		res = append_quote_escaped_string(guestfs, C2V_INIT, workdir);
+		res = append_quote_escaped_string(state, C2V_INIT, workdir);
 		if (res < 0) {
 			return res;
 		}
 		const char workdir_post[] =
 			"'\n";
-		res = guestfs_write_append(guestfs, C2V_INIT,
+		res = guestfs_write_append(state->guestfs, C2V_INIT,
 			workdir_post, strlen(workdir_post));
 		if (res < 0) {
 			return res;
@@ -376,14 +383,14 @@ static int generate_init_script(guestfs_h *guestfs,
 	const char *user = cvirt_oci_r_config_get_user(config);
 	if (user) {
 		const char user_pre[] = "_UIDGID='";
-		res = guestfs_write_append(guestfs, C2V_INIT,
+		res = guestfs_write_append(state->guestfs, C2V_INIT,
 			user_pre, strlen(user_pre));
 		if (res < 0) {
 			return res;
 		}
-		res = append_quote_escaped_string(guestfs, C2V_INIT, user);
+		res = append_quote_escaped_string(state, C2V_INIT, user);
 		const char user_post[] = "'\n";
-		res = guestfs_write_append(guestfs, C2V_INIT,
+		res = guestfs_write_append(state->guestfs, C2V_INIT,
 			user_post, strlen(user_post));
 		if (res < 0) {
 			return res;
@@ -394,25 +401,25 @@ static int generate_init_script(guestfs_h *guestfs,
 		cmd_len = cvirt_oci_r_config_get_cmd_length(config);
 	if (entrypoint_len || cmd_len) {
 		const char pre_cmd[] = "set -- ";
-		res = guestfs_write_append(guestfs, C2V_INIT, pre_cmd, strlen(pre_cmd));
+		res = guestfs_write_append(state->guestfs, C2V_INIT, pre_cmd, strlen(pre_cmd));
 		if (res < 0) {
 			return res;
 		}
 		for (int i = 0; i < entrypoint_len; i++) {
 			const char pre[] = "'";
-			res = guestfs_write_append(guestfs, C2V_INIT,
+			res = guestfs_write_append(state->guestfs, C2V_INIT,
 				pre, strlen(pre));
 			if (res < 0) {
 				return res;
 			}
 			const char *part = cvirt_oci_r_config_get_entrypoint_part(config, i);
-			res = append_quote_escaped_string(guestfs, C2V_INIT, part);
+			res = append_quote_escaped_string(state, C2V_INIT, part);
 			if (res < 0) {
 				return res;
 			}
 			const char post[] =
 				"' ";
-			res = guestfs_write_append(guestfs, C2V_INIT,
+			res = guestfs_write_append(state->guestfs, C2V_INIT,
 				post, strlen(post));
 			if (res < 0) {
 				return res;
@@ -420,32 +427,32 @@ static int generate_init_script(guestfs_h *guestfs,
 		}
 		for (int i = 0; i < cmd_len; i++) {
 			const char pre[] = "'";
-			res = guestfs_write_append(guestfs, C2V_INIT,
+			res = guestfs_write_append(state->guestfs, C2V_INIT,
 				pre, strlen(pre));
 			if (res < 0) {
 				return res;
 			}
 			const char *part = cvirt_oci_r_config_get_cmd_part(config, i);
-			res = append_quote_escaped_string(guestfs, C2V_INIT, part);
+			res = append_quote_escaped_string(state, C2V_INIT, part);
 			if (res < 0) {
 				return res;
 			}
 			const char post[] =
 				"' ";
-			res = guestfs_write_append(guestfs, C2V_INIT,
+			res = guestfs_write_append(state->guestfs, C2V_INIT,
 				post, strlen(post));
 			if (res < 0) {
 				return res;
 			}
 		}
 		const char post_cmd[] = "\n";
-		res = guestfs_write_append(guestfs, C2V_INIT, post_cmd, strlen(post_cmd));
+		res = guestfs_write_append(state->guestfs, C2V_INIT, post_cmd, strlen(post_cmd));
 		if (res < 0) {
 			return res;
 		}
 	}
 
-	res = guestfs_chmod(guestfs, 0400, C2V_INIT);
+	res = guestfs_chmod(state->guestfs, 0400, C2V_INIT);
 	return 0;
 }
 
@@ -464,7 +471,7 @@ static size_t estimate_disk_usage(const struct cvirt_io_entry *entry) {
 	return 0;
 }
 
-static void restore_mtime(guestfs_h *guestfs, struct cvirt_io_entry *entry,
+static void restore_mtime(struct c2v_state *state, struct cvirt_io_entry *entry,
 		const char *path) {
 	for (int i = 0; i < entry->inode->children_len; i++) {
 		if (!S_ISDIR(entry->inode->children[i].inode->stat.st_mode)) {
@@ -474,10 +481,10 @@ static void restore_mtime(guestfs_h *guestfs, struct cvirt_io_entry *entry,
 		strcpy(mpath, path);
 		strcat(mpath, entry->inode->children[i].name);
 		strcat(mpath, "/");
-		restore_mtime(guestfs, &entry->inode->children[i], mpath);
+		restore_mtime(state, &entry->inode->children[i], mpath);
 	}
 
-	guestfs_utimens(guestfs, path, entry->inode->stat.st_atim.tv_sec,
+	guestfs_utimens(state->guestfs, path, entry->inode->stat.st_atim.tv_sec,
 		entry->inode->stat.st_atim.tv_nsec, entry->inode->stat.st_mtim.tv_sec,
 		entry->inode->stat.st_mtim.tv_nsec);
 }
@@ -513,16 +520,17 @@ int main(int argc, char *argv[]) {
 		cvirt_oci_r_layer_destroy(layer);
 	}
 
+	struct c2v_state global_state = {0};
 	size_t image_size = (needed * 2) < 114294784 ? 114294784 : (needed * 2);
-	guestfs_h *guestfs = create_qcow2_btrfs_image(argv[2], image_size);
-	if (!guestfs) {
+	global_state.guestfs = create_qcow2_btrfs_image(argv[2], image_size);
+	if (!global_state.guestfs) {
 		exit(EXIT_FAILURE);
 	}
-	assert(guestfs_umask(guestfs, 0) >= 0);
+	assert(guestfs_umask(global_state.guestfs, 0) >= 0);
 	
-	assert(guestfs_mkdir_mode(guestfs, C2V_DIR, 0500) >= 0);
-	assert(guestfs_mkdir_mode(guestfs, C2V_LAYERS, 0500) >= 0);
-	assert(guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/",
+	assert(guestfs_mkdir_mode(global_state.guestfs, C2V_DIR, 0500) >= 0);
+	assert(guestfs_mkdir_mode(global_state.guestfs, C2V_LAYERS, 0500) >= 0);
+	assert(guestfs_btrfs_subvolume_snapshot_opts(global_state.guestfs, "/",
 		C2V_LAYERS "/base",
 		GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
 
@@ -533,16 +541,16 @@ int main(int argc, char *argv[]) {
 			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
 
 		// first pass: whiteouts
-		struct archive *archive = cvirt_oci_r_layer_get_libarchive(layer);
-		apply_whiteouts(guestfs, archive);
+		global_state.archive = cvirt_oci_r_layer_get_libarchive(layer);
+		apply_whiteouts(&global_state);
 
 		// second pass: data
 		cvirt_oci_r_layer_rewind(layer);
-		archive = cvirt_oci_r_layer_get_libarchive(layer);
-		dump_layer(guestfs, archive);
+		global_state.archive = cvirt_oci_r_layer_get_libarchive(layer);
+		dump_layer(&global_state);
 		cvirt_oci_r_layer_destroy(layer);
 
-		restore_mtime(guestfs, layer_trees[i], "/");
+		restore_mtime(&global_state, layer_trees[i], "/");
 
 		cvirt_io_tree_destroy(layer_trees[i]);
 
@@ -551,21 +559,21 @@ int main(int argc, char *argv[]) {
 		assert(snapshot_dest);
 		strcpy(snapshot_dest, C2V_LAYERS "/");
 		strcat(snapshot_dest, layer_digest);
-		assert(guestfs_btrfs_subvolume_snapshot_opts(guestfs, "/",
+		assert(guestfs_btrfs_subvolume_snapshot_opts(global_state.guestfs, "/",
 			snapshot_dest,
 			GUESTFS_BTRFS_SUBVOLUME_SNAPSHOT_OPTS_RO, 1, -1) >= 0);
 		free(snapshot_dest);
 	}
 	struct cvirt_oci_r_config *config =
 		cvirt_oci_r_config_from_archive_blob(fd, config_digest);
-	generate_init_script(guestfs, config);
+	generate_init_script(&global_state, config);
 	cvirt_oci_r_config_destroy(config);
 	cvirt_oci_r_manifest_destroy(manifest);
 	cvirt_oci_r_index_destroy(index);
 	close(fd);
 
-	guestfs_umount_all(guestfs);
-	guestfs_shutdown(guestfs);
-	guestfs_close(guestfs);
+	guestfs_umount_all(global_state.guestfs);
+	guestfs_shutdown(global_state.guestfs);
+	guestfs_close(global_state.guestfs);
 	return 0;
 }
