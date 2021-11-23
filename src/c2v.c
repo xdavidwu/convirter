@@ -303,35 +303,36 @@ next:
 	return 0;
 }
 
-static int append_quote_escaped_string(struct c2v_state *state, const char *path,
+static int append_quoted_string(struct c2v_state *state, const char *path,
 		const char *string) {
-	int len = strlen(string), k = 0, res = 0;
-	for (int j = 0; j < len; j++) {
-		if (string[j] == '\'') {
-			int part_len = j - k;
+	const char escaped_quote[] = "'\\''";
+	int escaped_quote_len = strlen(escaped_quote);
+	int len = strlen(string), k = 0, size = 2 + len;
+	for (int i = 0; i < len; i++) {
+		if (string[i] == '\'') {
+			size += escaped_quote_len;
+		}
+	}
+	char buffer[size];
+	buffer[0] = '\'';
+	int index = 1;
+	for (int i = 0; i < len; i++) {
+		if (string[i] == '\'') {
+			int part_len = i - k;
 			if (part_len) {
-				res = guestfs_write_append(state->guestfs, path,
-					&string[k], part_len);
-				if (res < 0) {
-					return res;
-				}
+				strncpy(&buffer[index], &string[k], part_len);
+				index += part_len;
 			}
-			res = guestfs_write_append(state->guestfs, path,
-				"'\"'\"'", 5);
-			if (res < 0) {
-				return res;
-			}
-			k = j + 1;
+			strncpy(&buffer[index], escaped_quote, escaped_quote_len);
+			index += escaped_quote_len;
+			k = i + 1;
 		}
 	}
 	int part_len = len - k;
 	if (part_len) {
-		res = guestfs_write_append(state->guestfs, path, &string[k], part_len);
-		if (res < 0) {
-			return res;
-		}
+		strncpy(&buffer[index], &string[k], part_len);
 	}
-	return 0;
+	return guestfs_write_append(state->guestfs, path, buffer, size);
 }
 
 static int generate_init_script(struct c2v_state *state,
@@ -339,21 +340,18 @@ static int generate_init_script(struct c2v_state *state,
 	int res;
 	int env_count = cvirt_oci_r_config_get_env_length(config);
 	for (int i = 0; i < env_count; i++) {
-		const char export_pre[] = "export '";
+		const char export_pre[] = "export ";
 		res = guestfs_write_append(state->guestfs, C2V_INIT,
 			export_pre, strlen(export_pre));
 		if (res < 0) {
 			return res;
 		}
 		const char *env = cvirt_oci_r_config_get_env(config, i);
-		res = append_quote_escaped_string(state, C2V_INIT, env);
+		res = append_quoted_string(state, C2V_INIT, env);
 		if (res < 0) {
 			return res;
 		}
-		const char export_post[] =
-			"'\n";
-		res = guestfs_write_append(state->guestfs, C2V_INIT,
-			export_post, strlen(export_post));
+		res = guestfs_write_append(state->guestfs, C2V_INIT, "\n", 1);
 		if (res < 0) {
 			return res;
 		}
@@ -361,20 +359,17 @@ static int generate_init_script(struct c2v_state *state,
 
 	const char *workdir = cvirt_oci_r_config_get_working_dir(config);
 	if (workdir) {
-		const char workdir_pre[] = "_WORKDIR='";
+		const char workdir_pre[] = "_WORKDIR=";
 		res = guestfs_write_append(state->guestfs, C2V_INIT,
 			workdir_pre, strlen(workdir_pre));
 		if (res < 0) {
 			return res;
 		}
-		res = append_quote_escaped_string(state, C2V_INIT, workdir);
+		res = append_quoted_string(state, C2V_INIT, workdir);
 		if (res < 0) {
 			return res;
 		}
-		const char workdir_post[] =
-			"'\n";
-		res = guestfs_write_append(state->guestfs, C2V_INIT,
-			workdir_post, strlen(workdir_post));
+		res = guestfs_write_append(state->guestfs, C2V_INIT, "\n", 1);
 		if (res < 0) {
 			return res;
 		}
@@ -382,16 +377,17 @@ static int generate_init_script(struct c2v_state *state,
 
 	const char *user = cvirt_oci_r_config_get_user(config);
 	if (user) {
-		const char user_pre[] = "_UIDGID='";
+		const char user_pre[] = "_UIDGID=";
 		res = guestfs_write_append(state->guestfs, C2V_INIT,
 			user_pre, strlen(user_pre));
 		if (res < 0) {
 			return res;
 		}
-		res = append_quote_escaped_string(state, C2V_INIT, user);
-		const char user_post[] = "'\n";
-		res = guestfs_write_append(state->guestfs, C2V_INIT,
-			user_post, strlen(user_post));
+		res = append_quoted_string(state, C2V_INIT, user);
+		if (res < 0) {
+			return res;
+		}
+		res = guestfs_write_append(state->guestfs, C2V_INIT, "\n", 1);
 		if (res < 0) {
 			return res;
 		}
@@ -406,47 +402,28 @@ static int generate_init_script(struct c2v_state *state,
 			return res;
 		}
 		for (int i = 0; i < entrypoint_len; i++) {
-			const char pre[] = "'";
-			res = guestfs_write_append(state->guestfs, C2V_INIT,
-				pre, strlen(pre));
-			if (res < 0) {
-				return res;
-			}
 			const char *part = cvirt_oci_r_config_get_entrypoint_part(config, i);
-			res = append_quote_escaped_string(state, C2V_INIT, part);
+			res = append_quoted_string(state, C2V_INIT, part);
 			if (res < 0) {
 				return res;
 			}
-			const char post[] =
-				"' ";
-			res = guestfs_write_append(state->guestfs, C2V_INIT,
-				post, strlen(post));
+			res = guestfs_write_append(state->guestfs, C2V_INIT, " ", 1);
 			if (res < 0) {
 				return res;
 			}
 		}
 		for (int i = 0; i < cmd_len; i++) {
-			const char pre[] = "'";
-			res = guestfs_write_append(state->guestfs, C2V_INIT,
-				pre, strlen(pre));
-			if (res < 0) {
-				return res;
-			}
 			const char *part = cvirt_oci_r_config_get_cmd_part(config, i);
-			res = append_quote_escaped_string(state, C2V_INIT, part);
+			res = append_quoted_string(state, C2V_INIT, part);
 			if (res < 0) {
 				return res;
 			}
-			const char post[] =
-				"' ";
-			res = guestfs_write_append(state->guestfs, C2V_INIT,
-				post, strlen(post));
+			res = guestfs_write_append(state->guestfs, C2V_INIT, " ", 1);
 			if (res < 0) {
 				return res;
 			}
 		}
-		const char post_cmd[] = "\n";
-		res = guestfs_write_append(state->guestfs, C2V_INIT, post_cmd, strlen(post_cmd));
+		res = guestfs_write_append(state->guestfs, C2V_INIT, "\n", 1);
 		if (res < 0) {
 			return res;
 		}
