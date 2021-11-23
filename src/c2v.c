@@ -353,6 +353,7 @@ static int append_quoted_string(struct c2v_state *state, const char *path,
 	if (part_len) {
 		strncpy(&buffer[index], &string[k], part_len);
 	}
+	buffer[size - 1] = '\'';
 	return guestfs_write_append(state->guestfs, path, buffer, size);
 }
 
