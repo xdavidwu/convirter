@@ -12,6 +12,8 @@
 
 #include <archive.h>
 #include <archive_entry.h>
+#include <convirter/io/entry.h>
+#include <convirter/io/xattr.h>
 #include <convirter/oci/blob.h>
 #include <convirter/oci/config.h>
 #include <convirter/oci/image.h>
@@ -32,7 +34,8 @@ Convert a VM image into OCI-compatible container image.\n\
                                   Defaults to zstd\n\
       --no-systemd-cleanup        Disable removing systemd units that will\n\
                                   likely fail and is unneeded in containers\n\
-\n\
+"      //--layer-reuse=ARCHIVE       Try to reuse layers from ARCHIVE\n
+"\n\
 Options below set respective config of output container image:\n"
 COMMON_EXEC_CONFIG_OPTIONS_HELP;
 
@@ -41,6 +44,7 @@ static const int common_exec_config_start = 128;
 static const struct option long_options[] = {
 	{"compression",	required_argument,	NULL,	1},
 	{"no-systemd-cleanup",	no_argument,	NULL,	2},
+	//{"layer-reuse",	required_argument,	NULL,	3}, WIP
 	COMMON_EXEC_CONFIG_LONG_OPTIONS(common_exec_config_start),
 	{0},
 };
@@ -70,6 +74,7 @@ struct v2c_state {
 		int compression_level;
 		bool disable_systemd_cleanup;
 		struct common_exec_config exec;
+		int layer_reuse_fd;
 	} config;
 };
 
@@ -111,6 +116,13 @@ static int parse_options(struct v2c_state *state, int argc, char *argv[]) {
 		case 2:
 			state->config.disable_systemd_cleanup = true;
 			break;
+		case 3:
+			state->config.layer_reuse_fd = open(optarg, O_RDONLY | O_CLOEXEC);
+			if (state->config.layer_reuse_fd == -1) {
+				perror("open");
+				exit(EXIT_FAILURE);
+			}
+			break;
 		}
 	}
 	return 0;
@@ -138,156 +150,6 @@ static int dump_file_content(struct v2c_state *state, const char *path, int64_t 
 		}
 	}
 	return 0;
-}
-
-static int dump_to_archive(struct v2c_state *state, const char *path,
-		struct guestfs_statns *stat) {
-	if (!stat) {
-		return -errno;
-	}
-	archive_entry_clear(state->layer_entry);
-	archive_entry_set_pathname(state->layer_entry, &path[1]);
-	struct stat tmpstat = {
-		.st_dev = stat->st_dev,
-		.st_ino = stat->st_ino,
-		.st_mode = stat->st_mode,
-		.st_uid = stat->st_uid,
-		.st_gid = stat->st_gid,
-		.st_rdev = stat->st_rdev,
-		.st_size = stat->st_size,
-		.st_nlink = stat->st_nlink,
-		.st_atim = {
-			.tv_sec = stat->st_atime_sec,
-			.tv_nsec = stat->st_atime_nsec,
-		},
-		.st_mtim = {
-			.tv_sec = stat->st_mtime_sec,
-			.tv_nsec = stat->st_mtime_nsec,
-		},
-		.st_ctim = {
-			.tv_sec = stat->st_ctime_sec,
-			.tv_nsec = stat->st_ctime_nsec,
-		},
-	};
-
-	if (state->config.set_modification_epoch) {
-		if (tmpstat.st_atim.tv_sec >= state->modification_start &&
-				tmpstat.st_atim.tv_sec <= state->modification_end) {
-			tmpstat.st_atim.tv_sec = state->config.source_date_epoch;
-			tmpstat.st_atim.tv_nsec = 0;
-		}
-		if (tmpstat.st_mtim.tv_sec >= state->modification_start &&
-				tmpstat.st_mtim.tv_sec <= state->modification_end) {
-			tmpstat.st_mtim.tv_sec = state->config.source_date_epoch;
-			tmpstat.st_mtim.tv_nsec = 0;
-		}
-		if (tmpstat.st_ctim.tv_sec >= state->modification_start &&
-				tmpstat.st_ctim.tv_sec <= state->modification_end) {
-			tmpstat.st_ctim.tv_sec = state->config.source_date_epoch;
-			tmpstat.st_ctim.tv_nsec = 0;
-		}
-	}
-
-	archive_entry_copy_stat(state->layer_entry, &tmpstat);
-	if ((stat->st_mode & S_IFMT) == S_IFLNK) {
-		char *link = guestfs_readlink(state->guestfs, path);
-		if (!link) {
-			return -errno;
-		}
-		archive_entry_set_symlink(state->layer_entry, link);
-		free(link);
-	}
-
-	struct guestfs_xattr_list *xattrs = guestfs_lgetxattrs(state->guestfs, path);
-	for (int i = 0; i < xattrs->len; i++) {
-		archive_entry_xattr_add_entry(state->layer_entry,
-			xattrs->val[i].attrname, xattrs->val[i].attrval,
-			xattrs->val[i].attrval_len);
-	}
-	guestfs_free_xattr_list(xattrs);
-
-	// in pax, data is stored on first seen, and archive_entry_linkify
-	// *sparse is for format where data is stored at last seen.
-	struct archive_entry *dummy;
-	archive_entry_linkify(state->layer_link_resolver, &state->layer_entry, &dummy);
-	archive_write_header(state->layer_archive, state->layer_entry);
-
-	// size is set to zero if linkify found hardlink to previous entry
-	if ((stat->st_mode & S_IFMT) == S_IFREG && archive_entry_size(state->layer_entry)) {
-		dump_file_content(state, path, stat->st_size);
-	}
-	return 0;
-}
-
-static int dump_guestfs(struct v2c_state *state, const char *dir) {
-	for (int i = 0; temporary_paths[i]; i++) {
-		if (!strcmp(dir, temporary_paths[i])) {
-			return 0;
-		}
-	}
-
-	char **ls = guestfs_ls(state->guestfs, dir);
-	if (!ls) {
-		return -errno;
-	} else if (!ls[0]) {
-		free(ls);
-		return 0;
-	}
-	struct guestfs_statns_list *stats = guestfs_lstatnslist(state->guestfs, dir, ls);
-	if (!stats) {
-		return -errno;
-	}
-
-	int res = 0, i = 0;
-	for (; ls[i]; i++) {
-		if (!strncmp(ls[i], ".wh.", 4)) {
-			// no way to store names like whiteouts in OCI
-			continue;
-		}
-
-		char *full;
-		if (dir[1]) { // not /
-			full = calloc(strlen(dir) + strlen(ls[i]) + 2, sizeof(char));
-			if (!full) {
-				guestfs_free_statns_list(stats);
-				return -errno;
-			}
-			strcpy(full, dir);
-			strcat(full, "/");
-			strcat(full, ls[i]);
-		} else {
-			full = calloc(strlen(ls[i]) + 2, sizeof(char));
-			if (!full) {
-				guestfs_free_statns_list(stats);
-				return -errno;
-			}
-			full[0] = '/';
-			strcpy(&full[1], ls[i]);
-		}
-		free(ls[i]);
-
-		res = dump_to_archive(state, full, &stats->val[i]);
-		if (res < 0) {
-			free(full);
-			goto cleanup;
-		}
-
-		if ((stats->val[i].st_mode & S_IFMT) == S_IFDIR) {
-			res = dump_guestfs(state, full);
-			if (res < 0) {
-				free(full);
-				goto cleanup;
-			}
-		}
-		free(full);
-	}
-cleanup:
-	for (; ls[i]; i++) {
-		free(ls[i]);
-	}
-	guestfs_free_statns_list(stats);
-	free(ls);
-	return res;
 }
 
 static int cleanup_fstab(struct v2c_state *state, char **mounts) {
@@ -408,6 +270,268 @@ static int setup_config(struct v2c_state *state, struct cvirt_oci_config *config
 	return res;
 }
 
+static const size_t ustar_logical_record_size = 512;
+
+size_t new_entry(struct v2c_state *state, struct cvirt_io_entry *entry,
+		const char *path) {
+	if (!state) {
+		size_t sz = ustar_logical_record_size;
+		if (S_ISREG(entry->inode->stat.st_mode)) {
+			sz += entry->inode->stat.st_size /
+				ustar_logical_record_size * ustar_logical_record_size;
+		}
+		// TODO consider pax extended header
+		// TODO consider hardlink
+		return sz;
+	}
+	archive_entry_clear(state->layer_entry);
+	archive_entry_set_pathname(state->layer_entry, &path[1]);
+	struct stat *const stat = &entry->inode->stat;
+	archive_entry_copy_stat(state->layer_entry, stat);
+
+	if (state->config.set_modification_epoch) {
+		if (stat->st_atim.tv_sec >= state->modification_start &&
+				stat->st_atim.tv_sec <= state->modification_end) {
+			archive_entry_set_atime(state->layer_entry,
+				state->config.source_date_epoch, 0);
+		}
+		if (stat->st_mtim.tv_sec >= state->modification_start &&
+				stat->st_mtim.tv_sec <= state->modification_end) {
+			archive_entry_set_mtime(state->layer_entry,
+				state->config.source_date_epoch, 0);
+		}
+		if (stat->st_ctim.tv_sec >= state->modification_start &&
+				stat->st_ctim.tv_sec <= state->modification_end) {
+			archive_entry_set_ctime(state->layer_entry,
+				state->config.source_date_epoch, 0);
+		}
+	}
+
+	if (S_ISLNK(stat->st_mode)) {
+		archive_entry_set_symlink(state->layer_entry, entry->inode->target);
+	}
+
+	for (int i = 0; i < entry->inode->xattrs_len; i++) {
+		archive_entry_xattr_add_entry(state->layer_entry,
+			entry->inode->xattrs[i].name,
+			entry->inode->xattrs[i].value,
+			entry->inode->xattrs[i].len);
+	}
+
+	// in pax, data is stored on first seen, and archive_entry_linkify
+	// *sparse is for format where data is stored at last seen.
+	struct archive_entry *dummy;
+	archive_entry_linkify(state->layer_link_resolver, &state->layer_entry, &dummy);
+	archive_write_header(state->layer_archive, state->layer_entry);
+
+	// size is set to zero if linkify found hardlink to previous entry
+	if (S_ISREG(stat->st_mode) && archive_entry_size(state->layer_entry)) {
+		dump_file_content(state, path, stat->st_size);
+	}
+	return 0;
+}
+
+size_t new_whiteout_entry(struct v2c_state *state,
+		const char *basepath, const char *name) {
+	if (!state) {
+		return ustar_logical_record_size;
+	}
+	archive_entry_clear(state->layer_entry);
+	char path[strlen(basepath) + strlen(name) + 5];
+	strcpy(path, &basepath[1]); // trim /
+	strcat(path, "/.wh.");
+	strcat(path, name);
+	archive_entry_set_pathname(state->layer_entry, path);
+	archive_entry_set_filetype(state->layer_entry, AE_IFREG);
+	archive_entry_set_size(state->layer_entry, 0);
+	archive_write_header(state->layer_archive, state->layer_entry);
+	return 0;
+}
+
+static bool compare_stat(struct stat *a, struct stat *b, const char *path) {
+	if (a->st_mode != b->st_mode) {
+		return true;
+	}
+	if (a->st_uid != b->st_uid || a->st_gid != b->st_gid) {
+		return true;
+	}
+	if ((S_ISCHR(a->st_mode) || S_ISBLK(a->st_mode)) && a->st_rdev != b->st_rdev) {
+		return true;
+	}
+	if (S_ISREG(a->st_mode) && a->st_size != b->st_size) {
+		return true;
+	}
+	if (a->st_mtime != b->st_mtime) {
+		return true;
+	}
+	if (a->st_atime && b->st_atime && a->st_atime != b->st_atime) {
+		return true;
+	}
+	return false;
+}
+
+static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b, const char *path) {
+	bool b_compared[b->xattrs_len];
+	memset(b_compared, 0, sizeof(bool) * b->xattrs_len);
+	for (int i = 0; i < a->xattrs_len; i++) {
+		bool found = false;
+		for (int j = 0; j < b->xattrs_len; j++) {
+			if (b_compared[j]) {
+				continue;
+			}
+			if (!strcmp(a->xattrs[i].name,
+					b->xattrs[j].name)) {
+				found = true;
+				b_compared[j] = true;
+				if (a->xattrs[i].len != b->xattrs[j].len ||
+						memcmp(a->xattrs[i].value,
+						b->xattrs[j].value, a->xattrs[i].len)) {
+					return true;
+				}
+			}
+		}
+		if (!found) {
+			return true;
+		}
+	}
+	for (int j = 0; j < b->xattrs_len; j++) {
+		if (!b_compared[j]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
+		const char *path, struct v2c_state *state) {
+	bool differs = false;
+	if (!a) {
+		differs = true;
+	} else {
+		if (path[1] != '\0') { //TODO compare root?
+			if (compare_stat(&a->inode->stat, &b->inode->stat, path) ||
+					compare_xattr(a->inode, b->inode, path)) {
+				differs = true;
+			}
+		}
+
+		if (S_ISREG(a->inode->stat.st_mode)) {
+			if (memcmp(a->inode->sha256sum, b->inode->sha256sum, 32)) {
+				differs = true;;
+			}
+		} else if (S_ISLNK(a->inode->stat.st_mode)) {
+			if (strcmp(a->inode->target, b->inode->target)) {
+				differs = true;;
+			}
+		}
+	}
+
+	size_t layer_size = 0;
+	if (S_ISDIR(b->inode->stat.st_mode)) {
+		if (path) { //TODO make path always available (including size est & if-dir-needed)
+			for (int i = 0; temporary_paths[i]; i++) { //TODO opt-out
+				if (!strcmp(path, temporary_paths[i])) {
+					// skip contents
+					goto create_entry_if_differs;
+				}
+			}
+		}
+		int b_match[b->inode->children_len];
+		memset(b_match, 0, sizeof(int) * b->inode->children_len);
+		bool b_create[b->inode->children_len];
+		memset(b_create, 0, sizeof(bool) * b->inode->children_len);
+		int a_len = a ? a->inode->children_len : 1;
+		bool a_remove[a_len];
+		memset(a_remove, 0, sizeof(bool) * a_len);
+		int max_len = 0;
+		// TODO (on building): do a lightweight search, stop on first
+		// child that need update, create dir, restart a full search
+		// (prevent recurse everything twice)
+		if (a) {
+			for (int i = 0; i < a->inode->children_len; i++) {
+				if (!strncmp(b->inode->children[i].name, ".wh.", 4)) {
+					// no way to store names like whiteouts in OCI
+					continue;
+				}
+				bool found = false;
+				for (int j = 0; j < b->inode->children_len; j++) {
+					if (b_match[j]) {
+						continue;
+					}
+					if (!strcmp(a->inode->children[i].name,
+							b->inode->children[j].name)) {
+						found = true;
+						b_match[j] = i + 1;
+						size_t res = build_layer(
+							&a->inode->children[i],
+							&b->inode->children[j],
+							NULL, NULL);
+						if (res) {
+							b_create[j] = true;
+							layer_size += res;
+							int len = strlen(b->inode->children[j].name);
+							max_len = len > max_len ? len : max_len;
+						}
+						break;
+					}
+				}
+				if (!found) {
+					a_remove[i] = true;
+					layer_size += new_whiteout_entry(NULL, NULL, NULL);
+				}
+			}
+		}
+		for (int j = 0; j < b->inode->children_len; j++) {
+			if (!strncmp(b->inode->children[j].name, ".wh.", 4)) {
+				// no way to store names like whiteouts in OCI
+				continue;
+			}
+			if (!b_match[j]) {
+				b_create[j] = true;
+				layer_size += build_layer(NULL, &b->inode->children[j], NULL,  NULL);
+				int len = strlen(b->inode->children[j].name);
+				max_len = len > max_len ? len : max_len;
+			}
+		}
+		if (layer_size) {
+			// directory itself
+			layer_size += new_entry(state, b, path);
+			if (state) { // apply changes
+				if (a) {
+					for (int i = 0; i < a->inode->children_len; i++) {
+						if (a_remove[i]) {
+							new_whiteout_entry(state, path, a->inode->children[i].name);
+						}
+					}
+				}
+				int name_index = strlen(path) + 1;
+				char npath[name_index + max_len + 1];
+				if (path[1]) {
+					strcpy(npath, path);
+				} else {
+					npath[0] = '\0';
+					name_index = 1;
+				}
+				strcat(npath, "/");
+				for (int i = 0; i < b->inode->children_len; i++) {
+					if (b_create[i]) {
+						strcpy(&npath[name_index], b->inode->children[i].name);
+						build_layer(b_match[i] ? &a->inode->children[b_match[i] - 1] : NULL,
+							&b->inode->children[i], npath, state);
+					}
+				}
+			}
+			return layer_size;
+		}
+	}
+
+create_entry_if_differs:
+	if (differs) {
+		return new_entry(state, b, path);
+	}
+	return 0;
+}
+
 int main(int argc, char *argv[]) {
 	struct v2c_state state = {
 		.config =  {
@@ -468,8 +592,9 @@ int main(int argc, char *argv[]) {
 
 	state.modification_end = time(NULL);
 
-	// guestfs_tar_out would let whiteouts fall in
-	dump_guestfs(&state, "/");
+	struct cvirt_io_entry *guestfs_tree = cvirt_io_tree_from_guestfs(state.guestfs, 0);
+	build_layer(NULL, guestfs_tree, "/", &state);
+	cvirt_io_tree_destroy(guestfs_tree);
 
 	archive_entry_free(state.layer_entry);
 	archive_entry_linkresolver_free(state.layer_link_resolver);
