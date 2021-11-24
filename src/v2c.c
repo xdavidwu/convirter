@@ -155,6 +155,7 @@ static int dump_to_archive(struct v2c_state *state, const char *path,
 		.st_gid = stat->st_gid,
 		.st_rdev = stat->st_rdev,
 		.st_size = stat->st_size,
+		.st_nlink = stat->st_nlink,
 		.st_atim = {
 			.tv_sec = stat->st_atime_sec,
 			.tv_nsec = stat->st_atime_nsec,
