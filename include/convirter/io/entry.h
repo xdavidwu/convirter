@@ -34,6 +34,7 @@ struct cvirt_io_entry {
 
 enum cvirt_io_tree_flags {
 	CVIRT_IO_TREE_CHECKSUM = 1 << 0,
+	CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS = 1 << 1,
 };
 
 struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t flags);

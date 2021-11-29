@@ -15,7 +15,9 @@ struct io_entry_oci_checksum_ctx {
 
 struct io_entry_guestfs_ctx {
 	struct cvirt_list *hardlink_inodes;
+	struct cvirt_list *btrfs_uuids;
 	gcry_md_hd_t gcrypt_handle;
+	uint32_t flags;
 };
 
 #endif

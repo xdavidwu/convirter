@@ -73,6 +73,48 @@ static void checksum_from_guestfs(uint8_t *dest, guestfs_h *guestfs,
 	gcry_md_reset(ctx->gcrypt_handle);
 }
 
+static bool is_btrfs_subvolume_seen(guestfs_h *guestfs, const char *path,
+		struct io_entry_guestfs_ctx *ctx) {
+	char **btrfs_info = guestfs_btrfs_subvolume_show(guestfs, path);
+	if (!btrfs_info) {
+		return false;
+	} else if (!btrfs_info[0]) {
+		free(btrfs_info);
+		return false;
+	}
+	bool uuid_skip = false, parent_skip = false;
+	for (int key_idx = 0; btrfs_info[key_idx]; key_idx += 2) {
+		if (!uuid_skip && !strcmp("UUID", btrfs_info[key_idx])) {
+			struct cvirt_list *ptr = ctx->btrfs_uuids;
+			while (ptr->next) {
+				ptr = ptr->next;
+				char *uuid = ptr->data;
+				if (!strcmp(btrfs_info[key_idx + 1], uuid)) {
+					uuid_skip = true;
+					break;
+				}
+			}
+			if (!uuid_skip) {
+				cvirt_list_append(ctx->btrfs_uuids, cvirt_xstrdup(btrfs_info[key_idx + 1]));
+			}
+		} else if (!parent_skip && !strcmp("Parent UUID", btrfs_info[key_idx])) {
+			struct cvirt_list *ptr = ctx->btrfs_uuids;
+			while (ptr->next) {
+				ptr = ptr->next;
+				char *uuid = ptr->data;
+				if (!strcmp(btrfs_info[key_idx + 1], uuid)) {
+					parent_skip = true;
+					break;
+				}
+			}
+		}
+		free(btrfs_info[key_idx]);
+		free(btrfs_info[key_idx + 1]);
+	}
+	free(btrfs_info);
+	return uuid_skip || parent_skip;
+}
+
 static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 		guestfs_h *guestfs, const char *path, uint32_t flags,
 		struct io_entry_guestfs_ctx *ctx) {
@@ -169,6 +211,16 @@ static void guestfs_dir_fill_children(struct cvirt_io_entry *entry,
 		xattrs_idx += l;
 
 		if (S_ISDIR(inode->children[i].inode->stat.st_mode)) {
+			if ((flags & CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS) &&
+					stats->val[i].st_ino == 256 &&
+					major(stats->val[i].st_dev) == 0 &&
+					is_btrfs_subvolume_seen(guestfs, abs_path, ctx)) {
+				/*
+				 * inode number = 256 (BTRFS_FIRST_FREE_OBJECTID),
+				 * root of a subvolume
+				 */
+				continue;
+			}
 			guestfs_dir_fill_children(&inode->children[i], guestfs,
 				abs_path, flags, ctx);
 		} else if (S_ISLNK(inode->children[i].inode->stat.st_mode)) {
@@ -194,10 +246,13 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 		return NULL;
 	}
 
-	struct io_entry_guestfs_ctx ctx = {0};
+	struct io_entry_guestfs_ctx ctx = { .flags = flags };
 	ctx.hardlink_inodes = cvirt_list_new();
 	if (flags & CVIRT_IO_TREE_CHECKSUM) {
 		gcry_md_open(&ctx.gcrypt_handle, GCRY_MD_SHA256, 0);
+	}
+	if (flags & CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS) {
+		ctx.btrfs_uuids = cvirt_list_new();
 	}
 
 	result->name = strdup("/");
@@ -207,6 +262,11 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 	struct guestfs_statns *stat = guestfs_lstatns(guestfs, "/");
 	assert(stat);
 	copy_stat_from_guestfs_statns(result->inode, stat);
+	if ((flags & CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS) &&
+			stat->st_ino == 256 && major(stat->st_dev) == 0) {
+		// record subvolume uuid if btrfs
+		is_btrfs_subvolume_seen(guestfs, "/", &ctx);
+	}
 	guestfs_free_statns(stat);
 
 	struct guestfs_xattr_list *xattrs = guestfs_lgetxattrs(guestfs, "/");
@@ -219,6 +279,15 @@ struct cvirt_io_entry *cvirt_io_tree_from_guestfs(guestfs_h *guestfs, uint32_t f
 	cvirt_list_destroy(ctx.hardlink_inodes);
 	if (flags & CVIRT_IO_TREE_CHECKSUM) {
 		gcry_md_close(ctx.gcrypt_handle);
+	}
+	if (flags & CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS) {
+		struct cvirt_list *ptr = ctx.btrfs_uuids;
+		while (ptr->next) {
+			ptr = ptr->next;
+			char *uuid = ptr->data;
+			free(uuid);
+		}
+		cvirt_list_destroy(ctx.btrfs_uuids);
 	}
 
 	return result;
