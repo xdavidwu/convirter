@@ -19,6 +19,10 @@
 #include <convirter/oci/image.h>
 #include <convirter/oci/manifest.h>
 #include <convirter/oci/layer.h>
+#include <convirter/oci-r/config.h>
+#include <convirter/oci-r/index.h>
+#include <convirter/oci-r/layer.h>
+#include <convirter/oci-r/manifest.h>
 #include <guestfs.h>
 
 #include "../common/guestfs.h"
@@ -34,8 +38,7 @@ Convert a VM image into OCI-compatible container image.\n\
                                   Defaults to zstd\n\
       --no-systemd-cleanup        Disable removing systemd units that will\n\
                                   likely fail and is unneeded in containers\n\
-"      //--layer-reuse=ARCHIVE       Try to reuse layers from ARCHIVE\n
-"\
+      --layer-reuse=ARCHIVE       Try to reuse layers from ARCHIVE\n\
       --skip-btrfs-snapshots      Skip btrfs snapshots\n\
 \n\
 Options below set respective config of output container image:\n"
@@ -46,7 +49,7 @@ static const int common_exec_config_start = 128;
 static const struct option long_options[] = {
 	{"compression",	required_argument,	NULL,	1},
 	{"no-systemd-cleanup",	no_argument,	NULL,	2},
-	//{"layer-reuse",	required_argument,	NULL,	3}, WIP
+	{"layer-reuse",	required_argument,	NULL,	3},
 	{"skip-btrfs-snapshots",no_argument,	NULL,	4},
 	COMMON_EXEC_CONFIG_LONG_OPTIONS(common_exec_config_start),
 	{0},
@@ -355,7 +358,7 @@ size_t new_whiteout_entry(struct v2c_state *state,
 	return 0;
 }
 
-static bool compare_stat(struct stat *a, struct stat *b, const char *path) {
+static bool compare_stat(struct stat *a, struct stat *b) {
 	if (a->st_mode != b->st_mode) {
 		return true;
 	}
@@ -377,7 +380,7 @@ static bool compare_stat(struct stat *a, struct stat *b, const char *path) {
 	return false;
 }
 
-static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b, const char *path) {
+static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b) {
 	bool b_compared[b->xattrs_len];
 	memset(b_compared, 0, sizeof(bool) * b->xattrs_len);
 	for (int i = 0; i < a->xattrs_len; i++) {
@@ -415,9 +418,9 @@ size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
 	if (!a) {
 		differs = true;
 	} else {
-		if (path[1] != '\0') { //TODO compare root?
-			if (compare_stat(&a->inode->stat, &b->inode->stat, path) ||
-					compare_xattr(a->inode, b->inode, path)) {
+		if (!path || path[1] != '\0') { //TODO compare root?
+			if (compare_stat(&a->inode->stat, &b->inode->stat) ||
+					compare_xattr(a->inode, b->inode)) {
 				differs = true;
 			}
 		}
@@ -604,7 +607,41 @@ int main(int argc, char *argv[]) {
 		flags |= CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
 	}
 	struct cvirt_io_entry *guestfs_tree = cvirt_io_tree_from_guestfs(state.guestfs, flags);
-	build_layer(NULL, guestfs_tree, "/", &state);
+	struct cvirt_io_entry *reused_tree = NULL;
+	if (state.config.layer_reuse_fd) {
+		size_t baseline = build_layer(NULL, guestfs_tree, "/", NULL);
+		struct cvirt_oci_r_index *index =
+			cvirt_oci_r_index_from_archive(state.config.layer_reuse_fd);
+		const char *manifest_digest =
+			cvirt_oci_r_index_get_native_manifest_digest(index);
+		struct cvirt_oci_r_manifest *manifest =
+			cvirt_oci_r_manifest_from_archive_blob(
+				state.config.layer_reuse_fd, manifest_digest);
+		int len = cvirt_oci_r_manifest_get_layers_length(manifest);
+
+		struct cvirt_io_entry *tree;
+
+		struct cvirt_oci_r_layer *layer = cvirt_oci_r_layer_from_archive_blob(
+			state.config.layer_reuse_fd,
+			cvirt_oci_r_manifest_get_layer_digest(manifest, 0),
+			cvirt_oci_r_manifest_get_layer_compression(manifest, 0));
+		tree = cvirt_io_tree_from_oci_layer(layer, 0);
+		for (int i = 1; i < len; i++) {
+			struct cvirt_oci_r_layer *layer = cvirt_oci_r_layer_from_archive_blob(
+				state.config.layer_reuse_fd,
+				cvirt_oci_r_manifest_get_layer_digest(manifest, i),
+				cvirt_oci_r_manifest_get_layer_compression(manifest, i));
+			cvirt_io_tree_oci_apply_layer(tree, layer, 0);
+		}
+		size_t reused = build_layer(tree, guestfs_tree, "/", NULL);
+		printf("Estimated layer size without reuse: %ld, with reuse: %ld\n", baseline, reused);
+
+		if (reused < baseline) {
+			//TODO
+			//reused_tree = tree;
+		}
+	}
+	build_layer(reused_tree, guestfs_tree, "/", &state);
 	cvirt_io_tree_destroy(guestfs_tree);
 
 	archive_entry_free(state.layer_entry);
