@@ -634,7 +634,8 @@ int main(int argc, char *argv[]) {
 		state.layer_link_resolver = archive_entry_linkresolver_new();
 		archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
 			archive_format(state.layer_archive));
-		size_t baseline = build_layer(NULL, guestfs_tree, "/", BUILD_LAYER_DRYRUN, &state);
+		size_t baseline = build_layer(NULL, guestfs_tree, "/", BUILD_LAYER_DRYRUN, &state) +
+			2 * ustar_logical_record_size; // 2 blocks of end-of-archive indicator
 		archive_entry_linkresolver_free(state.layer_link_resolver);
 
 		struct cvirt_oci_r_index *index =
@@ -664,7 +665,8 @@ int main(int argc, char *argv[]) {
 		state.layer_link_resolver = archive_entry_linkresolver_new();
 		archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
 			archive_format(state.layer_archive));
-		size_t reused = build_layer(tree, guestfs_tree, "/", BUILD_LAYER_DRYRUN, &state);
+		size_t reused = build_layer(tree, guestfs_tree, "/", BUILD_LAYER_DRYRUN, &state) +
+			2 * ustar_logical_record_size;
 		archive_entry_linkresolver_free(state.layer_link_resolver);
 
 		printf("Estimated layer size without reuse: %ld, with reuse: %ld\n", baseline, reused);
