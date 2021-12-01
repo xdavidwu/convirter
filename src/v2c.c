@@ -283,21 +283,26 @@ static int setup_config(struct v2c_state *state, struct cvirt_oci_config *config
 static const size_t ustar_logical_record_size = 512;
 
 size_t new_entry(struct v2c_state *state, struct cvirt_io_entry *entry,
-		const char *path) {
-	if (!state) {
-		size_t sz = ustar_logical_record_size;
-		if (S_ISREG(entry->inode->stat.st_mode)) {
-			sz += entry->inode->stat.st_size /
-				ustar_logical_record_size * ustar_logical_record_size;
-		}
-		// TODO consider pax extended header
-		// TODO consider hardlink
-		return sz;
-	}
+		const char *path, bool dry_run) {
 	archive_entry_clear(state->layer_entry);
 	archive_entry_set_pathname(state->layer_entry, &path[1]);
 	struct stat *const stat = &entry->inode->stat;
 	archive_entry_copy_stat(state->layer_entry, stat);
+
+	// in pax, data is stored on first seen, and archive_entry_linkify
+	// *sparse is for format where data is stored at last seen.
+	struct archive_entry *dummy;
+	archive_entry_linkify(state->layer_link_resolver, &state->layer_entry, &dummy);	
+	if (dry_run) {
+		size_t sz = ustar_logical_record_size;
+		if (S_ISREG(entry->inode->stat.st_mode) && archive_entry_size(state->layer_entry)) {
+			sz += entry->inode->stat.st_size /
+				ustar_logical_record_size * ustar_logical_record_size;
+		}
+		// TODO consider pax extended header
+		return sz;
+	}
+
 
 	if (state->config.set_modification_epoch) {
 		if (stat->st_atim.tv_sec >= state->modification_start &&
@@ -328,10 +333,6 @@ size_t new_entry(struct v2c_state *state, struct cvirt_io_entry *entry,
 			entry->inode->xattrs[i].len);
 	}
 
-	// in pax, data is stored on first seen, and archive_entry_linkify
-	// *sparse is for format where data is stored at last seen.
-	struct archive_entry *dummy;
-	archive_entry_linkify(state->layer_link_resolver, &state->layer_entry, &dummy);
 	archive_write_header(state->layer_archive, state->layer_entry);
 
 	// size is set to zero if linkify found hardlink to previous entry
@@ -342,8 +343,8 @@ size_t new_entry(struct v2c_state *state, struct cvirt_io_entry *entry,
 }
 
 size_t new_whiteout_entry(struct v2c_state *state,
-		const char *basepath, const char *name) {
-	if (!state) {
+		const char *basepath, const char *name, bool dry_run) {
+	if (dry_run) {
 		return ustar_logical_record_size;
 	}
 	archive_entry_clear(state->layer_entry);
@@ -412,13 +413,19 @@ static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b) {
 	return false;
 }
 
+enum v2c_build_layer_mode {
+	BUILD_LAYER_FULL,
+	BUILD_LAYER_DRYRUN,
+	BUILD_LAYER_TEST_DIR
+};
+
 size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
-		const char *path, struct v2c_state *state) {
+		const char *path, enum v2c_build_layer_mode mode, struct v2c_state *state) {
 	bool differs = false;
 	if (!a) {
 		differs = true;
 	} else {
-		if (!path || path[1] != '\0') { //TODO compare root?
+		if (path[1] != '\0') { //TODO compare root?
 			if (compare_stat(&a->inode->stat, &b->inode->stat) ||
 					compare_xattr(a->inode, b->inode)) {
 				differs = true;
@@ -438,12 +445,10 @@ size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
 
 	size_t layer_size = 0;
 	if (S_ISDIR(b->inode->stat.st_mode)) {
-		if (path) { //TODO make path always available (including size est & if-dir-needed)
-			for (int i = 0; temporary_paths[i]; i++) { //TODO opt-out
-				if (!strcmp(path, temporary_paths[i])) {
-					// skip contents
-					goto create_entry_if_differs;
-				}
+		for (int i = 0; temporary_paths[i]; i++) { //TODO opt-out
+			if (!strcmp(path, temporary_paths[i])) {
+				// skip contents
+				goto create_entry_if_differs;
 			}
 		}
 		int b_match[b->inode->children_len];
@@ -454,9 +459,32 @@ size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
 		bool a_remove[a_len];
 		memset(a_remove, 0, sizeof(bool) * a_len);
 		int max_len = 0;
-		// TODO (on building): do a lightweight search, stop on first
+
+		if (a) {
+			for (int i = 0; i < a->inode->children_len; i++) {
+				int len = strlen(a->inode->children[i].name);
+				max_len = len > max_len ? len : max_len;
+			}
+		}
+		for (int i = 0; i < b->inode->children_len; i++) {
+			int len = strlen(b->inode->children[i].name);
+			max_len = len > max_len ? len : max_len;
+		}
+		int name_index = strlen(path) + 1;
+		char npath[name_index + max_len + 1];
+		if (path[1]) {
+			strcpy(npath, path);
+		} else {
+			npath[0] = '\0';
+			name_index = 1;
+		}
+		strcat(npath, "/");
+
+		// on building: do a lightweight search, stop on first
 		// child that need update, create dir, restart a full search
 		// (prevent recurse everything twice)
+		enum v2c_build_layer_mode recur_mode = (mode == BUILD_LAYER_FULL) ?
+			BUILD_LAYER_TEST_DIR : mode;
 		if (a) {
 			for (int i = 0; i < a->inode->children_len; i++) {
 				if (!strncmp(b->inode->children[i].name, ".wh.", 4)) {
@@ -472,22 +500,27 @@ size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
 							b->inode->children[j].name)) {
 						found = true;
 						b_match[j] = i + 1;
+						strcpy(&npath[name_index], b->inode->children[j].name);
 						size_t res = build_layer(
 							&a->inode->children[i],
 							&b->inode->children[j],
-							NULL, NULL);
+							npath, recur_mode, state);
 						if (res) {
+							if (mode == BUILD_LAYER_TEST_DIR) {
+								return true;
+							}
 							b_create[j] = true;
 							layer_size += res;
-							int len = strlen(b->inode->children[j].name);
-							max_len = len > max_len ? len : max_len;
 						}
 						break;
 					}
 				}
 				if (!found) {
+					if (mode == BUILD_LAYER_TEST_DIR) {
+						return true;
+					}
 					a_remove[i] = true;
-					layer_size += new_whiteout_entry(NULL, NULL, NULL);
+					layer_size += new_whiteout_entry(state, path, a->inode->children[i].name, true);
 				}
 			}
 		}
@@ -497,37 +530,30 @@ size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
 				continue;
 			}
 			if (!b_match[j]) {
+				if (mode == BUILD_LAYER_TEST_DIR) {
+					return true;
+				}
 				b_create[j] = true;
-				layer_size += build_layer(NULL, &b->inode->children[j], NULL,  NULL);
-				int len = strlen(b->inode->children[j].name);
-				max_len = len > max_len ? len : max_len;
+				strcpy(&npath[name_index], b->inode->children[j].name);
+				layer_size += build_layer(NULL, &b->inode->children[j], npath, recur_mode, state);
 			}
 		}
 		if (layer_size) {
 			// directory itself
-			layer_size += new_entry(state, b, path);
-			if (state) { // apply changes
+			layer_size += new_entry(state, b, path, mode != BUILD_LAYER_FULL);
+			if (mode == BUILD_LAYER_FULL) { // apply changes
 				if (a) {
 					for (int i = 0; i < a->inode->children_len; i++) {
 						if (a_remove[i]) {
-							new_whiteout_entry(state, path, a->inode->children[i].name);
+							new_whiteout_entry(state, path, a->inode->children[i].name, false);
 						}
 					}
 				}
-				int name_index = strlen(path) + 1;
-				char npath[name_index + max_len + 1];
-				if (path[1]) {
-					strcpy(npath, path);
-				} else {
-					npath[0] = '\0';
-					name_index = 1;
-				}
-				strcat(npath, "/");
 				for (int i = 0; i < b->inode->children_len; i++) {
 					if (b_create[i]) {
 						strcpy(&npath[name_index], b->inode->children[i].name);
 						build_layer(b_match[i] ? &a->inode->children[b_match[i] - 1] : NULL,
-							&b->inode->children[i], npath, state);
+							&b->inode->children[i], npath, mode, state);
 					}
 				}
 			}
@@ -537,7 +563,10 @@ size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
 
 create_entry_if_differs:
 	if (differs) {
-		return new_entry(state, b, path);
+		if (mode == BUILD_LAYER_TEST_DIR) {
+			return true;
+		}
+		return new_entry(state, b, path, mode != BUILD_LAYER_FULL);
 	}
 	return 0;
 }
@@ -574,20 +603,12 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	state.layer_archive = cvirt_oci_layer_get_libarchive(layer);
 	state.layer_entry = archive_entry_new();
 	if (!state.layer_entry) {
 		perror("archive_entry_new");
 		exit(EXIT_FAILURE);
 	}
-
-	state.layer_link_resolver = archive_entry_linkresolver_new();
-	if (!state.layer_link_resolver) {
-		perror("archive_entry_linkresolver_new");
-		exit(EXIT_FAILURE);
-	}
-	state.layer_archive = cvirt_oci_layer_get_libarchive(layer);
-	archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
-		archive_format(state.layer_archive));
 
 	cleanup_fstab(&state, succeeded_mounts);
 
@@ -607,9 +628,15 @@ int main(int argc, char *argv[]) {
 		flags |= CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
 	}
 	struct cvirt_io_entry *guestfs_tree = cvirt_io_tree_from_guestfs(state.guestfs, flags);
+
 	struct cvirt_io_entry *reused_tree = NULL;
 	if (state.config.layer_reuse_fd) {
-		size_t baseline = build_layer(NULL, guestfs_tree, "/", NULL);
+		state.layer_link_resolver = archive_entry_linkresolver_new();
+		archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
+			archive_format(state.layer_archive));
+		size_t baseline = build_layer(NULL, guestfs_tree, "/", BUILD_LAYER_DRYRUN, &state);
+		archive_entry_linkresolver_free(state.layer_link_resolver);
+
 		struct cvirt_oci_r_index *index =
 			cvirt_oci_r_index_from_archive(state.config.layer_reuse_fd);
 		const char *manifest_digest =
@@ -633,7 +660,13 @@ int main(int argc, char *argv[]) {
 				cvirt_oci_r_manifest_get_layer_compression(manifest, i));
 			cvirt_io_tree_oci_apply_layer(tree, layer, 0);
 		}
-		size_t reused = build_layer(tree, guestfs_tree, "/", NULL);
+
+		state.layer_link_resolver = archive_entry_linkresolver_new();
+		archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
+			archive_format(state.layer_archive));
+		size_t reused = build_layer(tree, guestfs_tree, "/", BUILD_LAYER_DRYRUN, &state);
+		archive_entry_linkresolver_free(state.layer_link_resolver);
+
 		printf("Estimated layer size without reuse: %ld, with reuse: %ld\n", baseline, reused);
 
 		if (reused < baseline) {
@@ -641,7 +674,12 @@ int main(int argc, char *argv[]) {
 			//reused_tree = tree;
 		}
 	}
-	build_layer(reused_tree, guestfs_tree, "/", &state);
+
+	state.layer_link_resolver = archive_entry_linkresolver_new();
+	archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
+		archive_format(state.layer_archive));
+
+	build_layer(reused_tree, guestfs_tree, "/", BUILD_LAYER_FULL, &state);
 	cvirt_io_tree_destroy(guestfs_tree);
 
 	archive_entry_free(state.layer_entry);
