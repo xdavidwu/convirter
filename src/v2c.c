@@ -296,7 +296,7 @@ size_t new_entry(struct v2c_state *state, struct cvirt_io_entry *entry,
 	if (dry_run) {
 		size_t sz = ustar_logical_record_size;
 		if (S_ISREG(entry->inode->stat.st_mode) && archive_entry_size(state->layer_entry)) {
-			sz += entry->inode->stat.st_size /
+			sz += (entry->inode->stat.st_size + ustar_logical_record_size - 1) /
 				ustar_logical_record_size * ustar_logical_record_size;
 		}
 		// TODO consider pax extended header
