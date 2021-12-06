@@ -29,6 +29,7 @@ struct cvirt_oci_r_config *cvirt_oci_r_config_from_archive_blob(int fd,
 	}
 	// cache
 	config->config = json_object_object_get(config->obj, "config");
+	config->rootfs = json_object_object_get(config->obj, "rootfs");
 	return config;
 err:
 	free(config);
@@ -142,6 +143,33 @@ const char *cvirt_oci_r_config_get_working_dir(
 	}
 	return json_object_get_string(working_dir);
 } 
+
+int cvirt_oci_r_config_get_diff_ids_length(struct cvirt_oci_r_config *config) {
+	if (!config->rootfs) {
+		return 0;
+	}
+	struct json_object *diff_ids = json_object_object_get(config->rootfs, "diff_ids");
+	if (!diff_ids) {
+		return 0;
+	}
+	return json_object_array_length(diff_ids);
+}
+
+const char *cvirt_oci_r_config_get_diff_id(
+	struct cvirt_oci_r_config *config, int index) {
+	if (!config->rootfs) {
+		return NULL;
+	}
+	struct json_object *diff_ids = json_object_object_get(config->rootfs, "diff_ids");
+	if (!diff_ids) {
+		return NULL;
+	}
+	struct json_object *diff_id = json_object_array_get_idx(diff_ids, index);
+	if (!diff_id) {
+		return NULL;
+	}
+	return json_object_get_string(diff_id);
+}
 
 void cvirt_oci_r_config_destroy(struct cvirt_oci_r_config *config) {
 	json_object_put(config->obj);

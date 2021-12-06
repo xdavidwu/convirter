@@ -25,6 +25,11 @@ const char *cvirt_oci_r_config_get_user(struct cvirt_oci_r_config *config);
 
 const char *cvirt_oci_r_config_get_working_dir(struct cvirt_oci_r_config *config);
 
+int cvirt_oci_r_config_get_diff_ids_length(struct cvirt_oci_r_config *config);
+
+const char *cvirt_oci_r_config_get_diff_id(
+	struct cvirt_oci_r_config *config, int index);
+
 void cvirt_oci_r_config_destroy(struct cvirt_oci_r_config *config);
 
 #endif
