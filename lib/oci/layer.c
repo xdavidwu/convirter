@@ -102,14 +102,14 @@ out:
 
 struct cvirt_oci_layer *cvirt_oci_layer_from_archive_blob(int fd,
 		const char *digest,
-		enum cvirt_oci_r_layer_compression *compression,
+		enum cvirt_oci_r_layer_compression compression,
 		const char *diff_id) {
 	struct cvirt_oci_layer *layer = calloc(1, sizeof(struct cvirt_oci_layer));
 	if (!layer) {
 		return NULL;
 	}
 	layer->layer_type = EXISTING_BLOB_FROM_ARCHIVE;
-	switch (layer->compression) {
+	switch (compression) {
 	case CVIRT_OCI_R_LAYER_COMPRESSION_ZSTD:
 		layer->media_type = media_type_zstd;
 		break;

@@ -1,6 +1,8 @@
 #ifndef CVIRT_OCI_LAYER_H
 #define CVIRT_OCI_LAYER_H
 
+#include <convirter/oci-r/layer.h>
+
 struct cvirt_oci_layer;
 
 enum cvirt_oci_layer_compression {
@@ -11,6 +13,11 @@ enum cvirt_oci_layer_compression {
 
 struct cvirt_oci_layer *cvirt_oci_layer_new(
 	enum cvirt_oci_layer_compression compression, int level);
+
+struct cvirt_oci_layer *cvirt_oci_layer_from_archive_blob(int fd,
+		const char *digest,
+		enum cvirt_oci_r_layer_compression compression,
+		const char *diff_id);
 
 int cvirt_oci_layer_close(struct cvirt_oci_layer *layer);
 
