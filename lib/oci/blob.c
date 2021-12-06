@@ -5,6 +5,8 @@
 #include "oci/manifest.h"
 #include "sha256.h"
 
+#include <archive.h>
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,27 +22,35 @@ struct cvirt_oci_blob *cvirt_oci_blob_from_layer(struct cvirt_oci_layer *layer) 
 
 	blob->media_type = layer->media_type;
 
-	blob->path = strdup(layer->compressed_filename);
-	if (!blob->path) {
-		free(blob);
-		return NULL;
-	}
+	if (layer->layer_type == NEW_LAYER) {
+		blob->store_type = STORE_FS;
 
-	blob->sha256 = sha256sum_from_file(blob->path);
-	if (!blob->sha256) {
-		free(blob->path);
-		free(blob);
-		return NULL;
-	}
+		blob->path = strdup(layer->compressed_filename);
+		if (!blob->path) {
+			free(blob);
+			return NULL;
+		}
 
-	struct stat st;
-	if (stat(blob->path, &st) < 0) {
-		perror("stat");
-		free(blob->path);
-		free(blob);
-		return NULL;
+		blob->sha256 = sha256sum_from_file(blob->path);
+		if (!blob->sha256) {
+			free(blob->path);
+			free(blob);
+			return NULL;
+		}
+
+		struct stat st;
+		if (stat(blob->path, &st) < 0) {
+			perror("stat");
+			free(blob->path);
+			free(blob);
+			return NULL;
+		}
+		blob->size = st.st_size;
+	} else if (layer->layer_type == EXISTING_BLOB_FROM_ARCHIVE) {
+		blob->store_type = STORE_ARCHIVE;
+		blob->size = layer->size;
+		blob->from_archive = layer->from_archive;
 	}
-	blob->size = st.st_size;
 
 	return blob;
 }
@@ -52,7 +62,7 @@ struct cvirt_oci_blob *cvirt_oci_blob_from_config(struct cvirt_oci_config *confi
 		return NULL;
 	}
 
-	blob->from_mem = true;
+	blob->store_type = STORE_MEM;
 	blob->media_type = "application/vnd.oci.image.config.v1+json";
 	blob->content = config->content;
 	blob->size = strlen(blob->content);
@@ -74,7 +84,7 @@ struct cvirt_oci_blob *cvirt_oci_blob_from_manifest(struct cvirt_oci_manifest *m
 		return NULL;
 	}
 
-	blob->from_mem = true;
+	blob->store_type = STORE_MEM;
 	blob->media_type = "application/vnd.oci.image.manifest.v1+json";
 	blob->content = manifest->content;
 	blob->size = strlen(blob->content);
@@ -122,8 +132,16 @@ err:
 }
 
 void cvirt_oci_blob_destory(struct cvirt_oci_blob *blob) {
-	free(blob->sha256);
-	free(blob->path);
+	if (blob->digest_type == DIGEST_SHA256) {
+		free(blob->sha256);
+	} else if (blob->digest_type == DIGEST_PREFIXED) {
+		free(blob->digest);
+	}
+	if (blob->store_type == STORE_FS) {
+		free(blob->path);
+	} else if (blob->store_type == STORE_ARCHIVE) {
+		archive_read_free(blob->from_archive);
+	}
 	free(blob);
 }
 

@@ -1,8 +1,13 @@
 #include "convirter/oci/layer.h"
+#include "convirter/oci-r/layer.h"
 #include "oci/layer.h"
+#include "oci-r/layer.h"
+#include "archive-utils.h"
 #include "compressor.h"
 #include "sha256.h"
+#include "xmem.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,6 +26,7 @@ struct cvirt_oci_layer *cvirt_oci_layer_new(
 	if (!layer) {
 		goto out;
 	}
+	layer->layer_type = NEW_LAYER;
 
 	layer->compression = compression;
 	layer->compression_level = level;
@@ -94,11 +100,51 @@ out:
 	return layer;
 }
 
+struct cvirt_oci_layer *cvirt_oci_layer_from_archive_blob(int fd,
+		const char *digest,
+		enum cvirt_oci_r_layer_compression *compression,
+		const char *diff_id) {
+	struct cvirt_oci_layer *layer = calloc(1, sizeof(struct cvirt_oci_layer));
+	if (!layer) {
+		return NULL;
+	}
+	layer->layer_type = EXISTING_BLOB_FROM_ARCHIVE;
+	switch (layer->compression) {
+	case CVIRT_OCI_R_LAYER_COMPRESSION_ZSTD:
+		layer->media_type = media_type_zstd;
+		break;
+	case CVIRT_OCI_R_LAYER_COMPRESSION_GZIP:
+		layer->media_type = media_type_gzip;
+		break;
+	case CVIRT_OCI_R_LAYER_COMPRESSION_NONE:
+		layer->media_type = media_type_raw;
+		break;
+	}
+	char *name = digest_to_name(digest);
+	struct archive_entry *entry;
+	assert(lseek(fd, 0, SEEK_SET) == 0);
+	layer->from_archive = archive_from_fd_and_seek(fd, name, &entry);
+	free(name);
+	layer->size = archive_entry_size(entry);
+	if (!layer->from_archive) {
+		free(layer);
+		return NULL;
+	}
+	int index = 0;
+	while (digest[index] != ':') {
+		index++;
+	}
+	layer->digest = cvirt_xstrdup(digest);
+	layer->diff_id = cvirt_xstrdup(diff_id);
+	return layer;
+}
+
 int cvirt_oci_layer_close(struct cvirt_oci_layer *layer) {
+	assert(layer->layer_type == NEW_LAYER);
 	archive_write_close(layer->archive);
 	archive_write_free(layer->archive);
-	layer->diff_id = sha256sum_from_file(layer->tmp_filename);
-	if (!layer->diff_id) {
+	layer->diff_id_sha256 = sha256sum_from_file(layer->tmp_filename);
+	if (!layer->diff_id_sha256) {
 		return -1;
 	}
 
@@ -156,8 +202,13 @@ struct archive *cvirt_oci_layer_get_libarchive(struct cvirt_oci_layer *layer) {
 }
 
 void cvirt_oci_layer_destroy(struct cvirt_oci_layer *layer) {
-	unlink(layer->compressed_filename);
-	free(layer->tmp_filename);
-	free(layer->diff_id);
-	free(layer->compressed_filename);
+	if (layer->layer_type == NEW_LAYER) {
+		unlink(layer->compressed_filename);
+		free(layer->tmp_filename);
+		free(layer->diff_id_sha256);
+		free(layer->compressed_filename);
+	} else if (layer->layer_type == EXISTING_BLOB_FROM_ARCHIVE) {
+		free(layer->digest);
+		free(layer->diff_id);
+	}
 }

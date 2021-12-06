@@ -5,15 +5,30 @@
 #include <json-c/json_tokener.h>
 
 struct cvirt_oci_blob {
-	bool from_mem;
 	const char *media_type;
 
-	char *path;
+	enum {
+		STORE_FS,
+		STORE_MEM,
+		STORE_ARCHIVE,
+	} store_type;
 
-	const char *content;
+	union {
+		char *path;
+		const char *content;
+		struct archive *from_archive;
+	};
+
 	size_t size;
 
-	char *sha256;
+	enum {
+		DIGEST_SHA256,
+		DIGEST_PREFIXED
+	} digest_type;
+	union {
+		char *sha256;
+		char *digest;
+	};
 };
 
 struct json_object *descriptor_from_oci_blob(struct cvirt_oci_blob *blob);

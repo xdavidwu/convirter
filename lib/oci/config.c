@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <json-c/json_tokener.h>
@@ -60,8 +61,14 @@ err:
 }
 
 int cvirt_oci_config_add_layer(struct cvirt_oci_config *config, struct cvirt_oci_layer *layer) {
-	assert(layer->diff_id);
-	struct json_object *diff_id = json_object_new_string(layer->diff_id);
+	struct json_object *diff_id;
+	if (layer->layer_type == NEW_LAYER) {
+		char diff_id_str[7 + 64 + 1];
+		sprintf(diff_id_str, "sha256:%s", layer->diff_id_sha256);
+		diff_id = json_object_new_string(diff_id_str);
+	} else {
+		diff_id = json_object_new_string(layer->diff_id);
+	}
 	if (!diff_id) {
 		return -errno;
 	}

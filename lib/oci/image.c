@@ -93,9 +93,9 @@ int cvirt_oci_image_add_blob(struct cvirt_oci_image *image, struct cvirt_oci_blo
 	archive_entry_set_size(image->entry, blob->size);
 	archive_write_header(image->archive, image->entry);
 
-	if (blob->from_mem) {
+	if (blob->store_type == STORE_MEM) {
 		archive_write_data(image->archive, blob->content, blob->size);
-	} else {
+	} else if (blob->store_type == STORE_FS) {
 		char buf[bufsz];
 		size_t sz = blob->size;
 		int fd = open(blob->path, O_RDONLY);
@@ -118,6 +118,22 @@ int cvirt_oci_image_add_blob(struct cvirt_oci_image *image, struct cvirt_oci_blo
 			}
 		}
 		close(fd);
+	} else if (blob->store_type == STORE_ARCHIVE) {
+		char buf[bufsz];
+		size_t sz = blob->size;
+		while (sz) {
+			ssize_t r = archive_read_data(blob->from_archive, buf, sz > bufsz ? bufsz : sz);
+			if (r < 0) {
+				return -errno;
+			} else if (r == 0) {
+				fprintf(stderr, "%s ends permaturely: %ld remaining\n", blob->path, sz);
+				return -1;
+			}
+			sz -= r;
+			if (archive_write_data(image->archive, buf, r) < 0) {
+				return -errno;
+			}
+		}
 	}
 	return 0;
 }

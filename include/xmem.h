@@ -7,5 +7,6 @@ void *cvirt_xmalloc(size_t size);
 void *cvirt_xcalloc(size_t nmemb, size_t size);
 void *cvirt_xrealloc(void *ptr, size_t size);
 char *cvirt_xstrdup(const char *s);
+char *cvirt_xstrndup(const char *s, size_t size);
 
 #endif
