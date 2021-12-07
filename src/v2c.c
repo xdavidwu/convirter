@@ -629,6 +629,10 @@ int main(int argc, char *argv[]) {
 	}
 	struct cvirt_io_entry *guestfs_tree = cvirt_io_tree_from_guestfs(state.guestfs, flags);
 
+	struct cvirt_oci_image *image = cvirt_oci_image_new(argv[optind + 1]);
+	struct cvirt_oci_manifest *manifest = cvirt_oci_manifest_new();
+	struct cvirt_oci_config *config = cvirt_oci_config_new();
+
 	struct cvirt_io_entry *reused_tree = NULL;
 	if (state.config.layer_reuse_fd) {
 		state.layer_link_resolver = archive_entry_linkresolver_new();
@@ -642,23 +646,23 @@ int main(int argc, char *argv[]) {
 			cvirt_oci_r_index_from_archive(state.config.layer_reuse_fd);
 		const char *manifest_digest =
 			cvirt_oci_r_index_get_native_manifest_digest(index);
-		struct cvirt_oci_r_manifest *manifest =
+		struct cvirt_oci_r_manifest *from_manifest =
 			cvirt_oci_r_manifest_from_archive_blob(
 				state.config.layer_reuse_fd, manifest_digest);
-		int len = cvirt_oci_r_manifest_get_layers_length(manifest);
+		int len = cvirt_oci_r_manifest_get_layers_length(from_manifest);
 
 		struct cvirt_io_entry *tree;
 
 		struct cvirt_oci_r_layer *layer = cvirt_oci_r_layer_from_archive_blob(
 			state.config.layer_reuse_fd,
-			cvirt_oci_r_manifest_get_layer_digest(manifest, 0),
-			cvirt_oci_r_manifest_get_layer_compression(manifest, 0));
+			cvirt_oci_r_manifest_get_layer_digest(from_manifest, 0),
+			cvirt_oci_r_manifest_get_layer_compression(from_manifest, 0));
 		tree = cvirt_io_tree_from_oci_layer(layer, 0);
 		for (int i = 1; i < len; i++) {
 			struct cvirt_oci_r_layer *layer = cvirt_oci_r_layer_from_archive_blob(
 				state.config.layer_reuse_fd,
-				cvirt_oci_r_manifest_get_layer_digest(manifest, i),
-				cvirt_oci_r_manifest_get_layer_compression(manifest, i));
+				cvirt_oci_r_manifest_get_layer_digest(from_manifest, i),
+				cvirt_oci_r_manifest_get_layer_compression(from_manifest, i));
 			cvirt_io_tree_oci_apply_layer(tree, layer, 0);
 		}
 
@@ -672,8 +676,23 @@ int main(int argc, char *argv[]) {
 		printf("Estimated layer size without reuse: %ld, with reuse: %ld\n", baseline, reused);
 
 		if (reused < baseline) {
-			//TODO
-			//reused_tree = tree;
+			struct cvirt_oci_r_config *from_config = cvirt_oci_r_config_from_archive_blob(
+				state.config.layer_reuse_fd, cvirt_oci_r_manifest_get_config_digest(from_manifest));
+			for (int i = 0; i < len; i++) {
+				struct cvirt_oci_layer * layer = cvirt_oci_layer_from_archive_blob(
+					state.config.layer_reuse_fd,
+					cvirt_oci_r_manifest_get_layer_digest(from_manifest, i),
+					cvirt_oci_r_manifest_get_layer_compression(from_manifest, i),
+					cvirt_oci_r_config_get_diff_id(from_config, i));
+				struct cvirt_oci_blob *layer_blob = cvirt_oci_blob_from_layer(layer);
+				cvirt_oci_config_add_layer(config, layer);
+				cvirt_oci_manifest_add_layer(manifest, layer_blob);
+				cvirt_oci_image_add_blob(image, layer_blob);
+				cvirt_oci_blob_destory(layer_blob);
+				cvirt_oci_layer_destroy(layer);
+			}
+			cvirt_oci_r_config_destroy(from_config);
+			reused_tree = tree;
 		}
 	}
 
@@ -688,7 +707,6 @@ int main(int argc, char *argv[]) {
 	archive_entry_linkresolver_free(state.layer_link_resolver);
 	cvirt_oci_layer_close(layer);
 
-	struct cvirt_oci_config *config = cvirt_oci_config_new();
 	cvirt_oci_config_add_layer(config, layer);
 	setup_config(&state, config);
 	cvirt_oci_config_close(config);
@@ -697,26 +715,26 @@ int main(int argc, char *argv[]) {
 	guestfs_shutdown(state.guestfs);
 	guestfs_close(state.guestfs);
 
-	struct cvirt_oci_blob *config_blob = cvirt_oci_blob_from_config(config);
 	struct cvirt_oci_blob *layer_blob = cvirt_oci_blob_from_layer(layer);
-	struct cvirt_oci_manifest *manifest = cvirt_oci_manifest_new();
-	cvirt_oci_manifest_set_config(manifest, config_blob);
 	cvirt_oci_manifest_add_layer(manifest, layer_blob);
+	cvirt_oci_image_add_blob(image, layer_blob);
+	cvirt_oci_blob_destory(layer_blob);
+	cvirt_oci_layer_destroy(layer);
+
+	struct cvirt_oci_blob *config_blob = cvirt_oci_blob_from_config(config);
+	cvirt_oci_manifest_set_config(manifest, config_blob);
+	cvirt_oci_image_add_blob(image, config_blob);
+	cvirt_oci_blob_destory(config_blob);
+	cvirt_oci_config_destroy(config);
+
 	cvirt_oci_manifest_close(manifest);
 
 	struct cvirt_oci_blob *manifest_blob = cvirt_oci_blob_from_manifest(manifest);
-	struct cvirt_oci_image *image = cvirt_oci_image_new(argv[optind + 1]);
-	cvirt_oci_image_add_blob(image, layer_blob);
-	cvirt_oci_image_add_blob(image, config_blob);
 	cvirt_oci_image_add_manifest(image, manifest_blob);
 	cvirt_oci_image_close(image);
-
-	cvirt_oci_image_destroy(image);
 	cvirt_oci_blob_destory(manifest_blob);
 	cvirt_oci_manifest_destroy(manifest);
-	cvirt_oci_blob_destory(layer_blob);
-	cvirt_oci_blob_destory(config_blob);
-	cvirt_oci_config_destroy(config);
-	cvirt_oci_layer_destroy(layer);
+
+	cvirt_oci_image_destroy(image);
 	return 0;
 }
