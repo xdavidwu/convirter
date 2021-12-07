@@ -644,6 +644,7 @@ int main(int argc, char *argv[]) {
 	struct cvirt_oci_config *config = cvirt_oci_config_new();
 
 	struct cvirt_io_entry *reused_tree = NULL;
+	size_t reused = 0;
 	if (state.config.layer_reuse_fd) {
 		state.layer_link_resolver = archive_entry_linkresolver_new();
 		archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
@@ -679,8 +680,10 @@ int main(int argc, char *argv[]) {
 		state.layer_link_resolver = archive_entry_linkresolver_new();
 		archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
 			archive_format(state.layer_archive));
-		size_t reused = build_layer(tree, guestfs_tree, "/", BUILD_LAYER_DRYRUN, &state) +
-			2 * ustar_logical_record_size;
+		reused = build_layer(tree, guestfs_tree, "/", BUILD_LAYER_DRYRUN, &state);
+		if (reused) {
+			reused += 2 * ustar_logical_record_size;
+		}
 		archive_entry_linkresolver_free(state.layer_link_resolver);
 
 		printf("Estimated layer size without reuse: %ld, with reuse: %ld\n", baseline, reused);
@@ -706,30 +709,32 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	state.layer_link_resolver = archive_entry_linkresolver_new();
-	archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
-		archive_format(state.layer_archive));
+	if (!reused_tree || reused) {
+		state.layer_link_resolver = archive_entry_linkresolver_new();
+		archive_entry_linkresolver_set_strategy(state.layer_link_resolver,
+			archive_format(state.layer_archive));
 
-	build_layer(reused_tree, guestfs_tree, "/", BUILD_LAYER_FULL, &state);
-	cvirt_io_tree_destroy(guestfs_tree);
+		build_layer(reused_tree, guestfs_tree, "/", BUILD_LAYER_FULL, &state);
+		cvirt_io_tree_destroy(guestfs_tree);
 
-	archive_entry_free(state.layer_entry);
-	archive_entry_linkresolver_free(state.layer_link_resolver);
-	cvirt_oci_layer_close(layer);
+		archive_entry_free(state.layer_entry);
+		archive_entry_linkresolver_free(state.layer_link_resolver);
+		cvirt_oci_layer_close(layer);
 
-	cvirt_oci_config_add_layer(config, layer);
+		struct cvirt_oci_blob *layer_blob = cvirt_oci_blob_from_layer(layer);
+		cvirt_oci_config_add_layer(config, layer);
+		cvirt_oci_manifest_add_layer(manifest, layer_blob);
+		cvirt_oci_image_add_blob(image, layer_blob);
+		cvirt_oci_blob_destory(layer_blob);
+		cvirt_oci_layer_destroy(layer);
+	}
+
 	setup_config(&state, config);
 	cvirt_oci_config_close(config);
 
 	guestfs_umount_all(state.guestfs);
 	guestfs_shutdown(state.guestfs);
 	guestfs_close(state.guestfs);
-
-	struct cvirt_oci_blob *layer_blob = cvirt_oci_blob_from_layer(layer);
-	cvirt_oci_manifest_add_layer(manifest, layer_blob);
-	cvirt_oci_image_add_blob(image, layer_blob);
-	cvirt_oci_blob_destory(layer_blob);
-	cvirt_oci_layer_destroy(layer);
 
 	struct cvirt_oci_blob *config_blob = cvirt_oci_blob_from_config(config);
 	cvirt_oci_manifest_set_config(manifest, config_blob);
