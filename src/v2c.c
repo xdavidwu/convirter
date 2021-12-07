@@ -303,25 +303,6 @@ size_t new_entry(struct v2c_state *state, struct cvirt_io_entry *entry,
 		return sz;
 	}
 
-
-	if (state->config.set_modification_epoch) {
-		if (stat->st_atim.tv_sec >= state->modification_start &&
-				stat->st_atim.tv_sec <= state->modification_end) {
-			archive_entry_set_atime(state->layer_entry,
-				state->config.source_date_epoch, 0);
-		}
-		if (stat->st_mtim.tv_sec >= state->modification_start &&
-				stat->st_mtim.tv_sec <= state->modification_end) {
-			archive_entry_set_mtime(state->layer_entry,
-				state->config.source_date_epoch, 0);
-		}
-		if (stat->st_ctim.tv_sec >= state->modification_start &&
-				stat->st_ctim.tv_sec <= state->modification_end) {
-			archive_entry_set_ctime(state->layer_entry,
-				state->config.source_date_epoch, 0);
-		}
-	}
-
 	if (S_ISLNK(stat->st_mode)) {
 		archive_entry_set_symlink(state->layer_entry, entry->inode->target);
 	}
@@ -571,6 +552,31 @@ create_entry_if_differs:
 	return 0;
 }
 
+void timestamp_fixup(struct cvirt_io_entry *tree, struct v2c_state *state) {
+	struct stat *stat = &tree->inode->stat;
+	if (stat->st_atim.tv_sec >= state->modification_start &&
+			stat->st_atim.tv_sec <= state->modification_end) {
+		stat->st_atim.tv_sec = state->config.source_date_epoch;
+		stat->st_atim.tv_nsec = 0;
+	}
+	if (stat->st_mtim.tv_sec >= state->modification_start &&
+			stat->st_mtim.tv_sec <= state->modification_end) {
+		stat->st_mtim.tv_sec = state->config.source_date_epoch;
+		stat->st_mtim.tv_nsec = 0;
+	}
+	if (stat->st_ctim.tv_sec >= state->modification_start &&
+			stat->st_ctim.tv_sec <= state->modification_end) {
+		stat->st_ctim.tv_sec = state->config.source_date_epoch;
+		stat->st_ctim.tv_nsec = 0;
+	}
+
+	if (S_ISDIR(stat->st_mode)) {
+		for (int i = 0; i < tree->inode->children_len; i++) {
+			timestamp_fixup(&tree->inode->children[i], state);
+		}
+	}
+}
+
 int main(int argc, char *argv[]) {
 	struct v2c_state state = {
 		.config =  {
@@ -628,6 +634,10 @@ int main(int argc, char *argv[]) {
 		flags |= CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
 	}
 	struct cvirt_io_entry *guestfs_tree = cvirt_io_tree_from_guestfs(state.guestfs, flags);
+
+	if (state.config.set_modification_epoch) {
+		timestamp_fixup(guestfs_tree, &state);
+	}
 
 	struct cvirt_oci_image *image = cvirt_oci_image_new(argv[optind + 1]);
 	struct cvirt_oci_manifest *manifest = cvirt_oci_manifest_new();
