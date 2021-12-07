@@ -4,6 +4,7 @@
 #include "oci/layer.h"
 #include "oci/manifest.h"
 #include "sha256.h"
+#include "xmem.h"
 
 #include <archive.h>
 
@@ -24,6 +25,7 @@ struct cvirt_oci_blob *cvirt_oci_blob_from_layer(struct cvirt_oci_layer *layer) 
 
 	if (layer->layer_type == NEW_LAYER) {
 		blob->store_type = STORE_FS;
+		blob->digest_type = DIGEST_SHA256;
 
 		blob->path = strdup(layer->compressed_filename);
 		if (!blob->path) {
@@ -48,8 +50,10 @@ struct cvirt_oci_blob *cvirt_oci_blob_from_layer(struct cvirt_oci_layer *layer) 
 		blob->size = st.st_size;
 	} else if (layer->layer_type == EXISTING_BLOB_FROM_ARCHIVE) {
 		blob->store_type = STORE_ARCHIVE;
+		blob->digest_type = DIGEST_PREFIXED;
 		blob->size = layer->size;
 		blob->from_archive = layer->from_archive;
+		blob->digest = cvirt_xstrdup(layer->digest);
 	}
 
 	return blob;
@@ -67,6 +71,7 @@ struct cvirt_oci_blob *cvirt_oci_blob_from_config(struct cvirt_oci_config *confi
 	blob->content = config->content;
 	blob->size = strlen(blob->content);
 
+	blob->digest_type = DIGEST_SHA256;
 	blob->sha256 = sha256sum_from_mem(blob->content, blob->size);
 	if (!blob->sha256) {
 		free(blob->path);
@@ -89,6 +94,7 @@ struct cvirt_oci_blob *cvirt_oci_blob_from_manifest(struct cvirt_oci_manifest *m
 	blob->content = manifest->content;
 	blob->size = strlen(blob->content);
 
+	blob->digest_type = DIGEST_SHA256;
 	blob->sha256 = sha256sum_from_mem(blob->content, blob->size);
 	if (!blob->sha256) {
 		free(blob->path);
@@ -111,9 +117,14 @@ struct json_object *descriptor_from_oci_blob(struct cvirt_oci_blob *blob) {
 	}
 	json_object_object_add(root_obj, "mediaType", type);
 
-	char digest_str[7 + 64 + 1];
-	sprintf(digest_str, "sha256:%s", blob->sha256);
-	struct json_object *digest = json_object_new_string(digest_str);
+	struct json_object *digest;
+	if (blob->digest_type == DIGEST_SHA256) {
+		char digest_str[7 + 64 + 1];
+		sprintf(digest_str, "sha256:%s", blob->sha256);
+		digest = json_object_new_string(digest_str);
+	} else {
+		digest = json_object_new_string(blob->digest);
+	}
 	if (!digest) {
 		goto err;
 	}

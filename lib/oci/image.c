@@ -1,6 +1,7 @@
 #include "convirter/oci/image.h"
 #include "oci/blob.h"
 #include "oci/image.h"
+#include "archive-utils.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -83,12 +84,18 @@ err:
 }
 
 int cvirt_oci_image_add_blob(struct cvirt_oci_image *image, struct cvirt_oci_blob *blob) {
-	char path[6 + 7 + 64 + 1];
-	strcpy(path, "blobs/sha256/");
-	strcat(path, blob->sha256);
-
 	archive_entry_clear(image->entry);
-	archive_entry_set_pathname(image->entry, path);
+
+	if (blob->digest_type == DIGEST_SHA256) {
+		char path[6 + 7 + 64 + 1];
+		strcpy(path, "blobs/sha256/");
+		strcat(path, blob->sha256);
+		archive_entry_set_pathname(image->entry, path);
+	} else if (blob->digest_type == DIGEST_PREFIXED) {
+		char *path = digest_to_name(blob->digest);
+		archive_entry_set_pathname(image->entry, path);
+		free(path);
+	}
 	archive_entry_set_filetype(image->entry, AE_IFREG);
 	archive_entry_set_size(image->entry, blob->size);
 	archive_write_header(image->archive, image->entry);
