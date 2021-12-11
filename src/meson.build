@@ -8,6 +8,14 @@ v2c = executable(
   include_directories: [libconvirter_include]
 )
 
+v2c_mkfindlayerfilter = executable(
+  'v2c-mkfindlayerfilter',
+  'v2c-mkfindlayerfilter.c',
+  dependencies: [libgcrypt, libm],
+  link_with: [libconvirter],
+  include_directories: [libconvirter_include]
+)
+
 c2v = executable(
   'c2v',
   'c2v.c',

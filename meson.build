@@ -1,9 +1,12 @@
 project('convirter', 'c')
 
+cc = meson.get_compiler('c')
+
 libarchive = dependency('libarchive')
 libgcrypt = dependency('libgcrypt')
 libguestfs = dependency('libguestfs')
 json_c = dependency('json-c')
+libm = cc.find_library('m', required: false)
 
 libconvirter_files = []
 libconvirter_include = include_directories('include')
