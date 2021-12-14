@@ -30,6 +30,8 @@ struct cvirt_io_entry {
 	char *name;
 
 	struct cvirt_io_inode *inode;
+
+	void *userdata;
 };
 
 enum cvirt_io_tree_flags {
