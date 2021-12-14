@@ -16,6 +16,15 @@ v2c_mkfindlayerfilter = executable(
   include_directories: [libconvirter_include]
 )
 
+v2c_findlayer = executable(
+  'v2c-findlayer',
+  'v2c-findlayer.c',
+  '../common/guestfs.c',
+  dependencies: [libgcrypt, libguestfs],
+  link_with: [libconvirter],
+  include_directories: [libconvirter_include]
+)
+
 c2v = executable(
   'c2v',
   'c2v.c',
