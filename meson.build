@@ -17,7 +17,8 @@ libconvirter = library(
   'convirter',
   libconvirter_files,
   include_directories: [libconvirter_include],
-  dependencies: [libarchive, libgcrypt, json_c, libguestfs]
+  dependencies: [libarchive, libgcrypt, json_c, libguestfs],
+  install: true
 )
 
 if get_option('build_appliance')

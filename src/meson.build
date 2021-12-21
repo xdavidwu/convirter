@@ -5,7 +5,8 @@ v2c = executable(
   '../common/common-config.c',
   dependencies: [libguestfs, libarchive],
   link_with: [libconvirter],
-  include_directories: [libconvirter_include]
+  include_directories: [libconvirter_include],
+  install: true
 )
 
 v2c_mkfindlayerfilter = executable(
@@ -13,7 +14,8 @@ v2c_mkfindlayerfilter = executable(
   'v2c-mkfindlayerfilter.c',
   dependencies: [libgcrypt, libm],
   link_with: [libconvirter],
-  include_directories: [libconvirter_include]
+  include_directories: [libconvirter_include],
+  install: true
 )
 
 v2c_findlayer = executable(
@@ -22,7 +24,8 @@ v2c_findlayer = executable(
   '../common/guestfs.c',
   dependencies: [libgcrypt, libguestfs],
   link_with: [libconvirter],
-  include_directories: [libconvirter_include]
+  include_directories: [libconvirter_include],
+  install: true
 )
 
 c2v = executable(
@@ -32,5 +35,6 @@ c2v = executable(
   '../common/common-config.c',
   dependencies: [libguestfs, libarchive],
   link_with: [libconvirter],
-  include_directories: [libconvirter_include]
+  include_directories: [libconvirter_include],
+  install: true
 )
