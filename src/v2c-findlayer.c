@@ -93,7 +93,9 @@ static size_t estimate_reuse_by_filter(struct cvirt_io_entry *tree,
 		uint8_t *filter, int log2m, int k, char *path, int name_loc,
 		gcry_md_hd_t gcry) {
 	if (S_ISREG(tree->inode->stat.st_mode)) {
-		strcpy(&path[name_loc], tree->name);
+		if (k > pre_hash_len) {
+			strcpy(&path[name_loc], tree->name);
+		}
 		for (int i = 0; i < k; i++) {
 			uint32_t hash = (i < pre_hash_len) ?
 				((uint32_t *)tree->userdata)[i] :
@@ -109,7 +111,7 @@ static size_t estimate_reuse_by_filter(struct cvirt_io_entry *tree,
 			ustar_logical_record_size;
 	} else if (S_ISDIR(tree->inode->stat.st_mode)) {
 		int new_name_loc = name_loc;
-		if (strcmp(tree->name, "/")) {
+		if (strcmp(tree->name, "/") && k > pre_hash_len) {
 			int l = strlen(tree->name);
 			strcpy(&path[name_loc], tree->name);
 			path[name_loc + l] = '/';
