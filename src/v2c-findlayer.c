@@ -146,7 +146,7 @@ static int64_t estimate_reuse(struct cvirt_io_entry *tree, int dirfd,
 	if (!(sz & 1)) {
 		return -EINVAL;
 	}
-	int log2m = 1;
+	int log2m = 0;
 	while (sz != 1) {
 		sz >>= 1;
 		log2m++;
@@ -154,6 +154,7 @@ static int64_t estimate_reuse(struct cvirt_io_entry *tree, int dirfd,
 			return -EINVAL;
 		}
 	}
+	log2m += 3;
 
 	uint8_t *buf = calloc(stat.st_size, 1);
 	assert(buf);
