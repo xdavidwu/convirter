@@ -87,6 +87,8 @@ static void free_pre_hash(struct cvirt_io_entry *tree) {
 	}
 }
 
+static const size_t ustar_logical_record_size = 512;
+
 static size_t estimate_reuse_by_filter(struct cvirt_io_entry *tree,
 		uint8_t *filter, int log2m, int k, char *path, int name_loc,
 		gcry_md_hd_t gcry) {
@@ -101,7 +103,10 @@ static size_t estimate_reuse_by_filter(struct cvirt_io_entry *tree,
 				return 0;
 			}
 		}
-		return tree->inode->stat.st_size;
+		// required data record + 1 header record
+		return (tree->inode->stat.st_size + ustar_logical_record_size - 1) /
+			ustar_logical_record_size * ustar_logical_record_size +
+			ustar_logical_record_size;
 	} else if (S_ISDIR(tree->inode->stat.st_mode)) {
 		int new_name_loc = name_loc;
 		if (strcmp(tree->name, "/")) {
