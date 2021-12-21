@@ -94,7 +94,7 @@ static size_t estimate_reuse_by_filter(struct cvirt_io_entry *tree,
 		strcpy(&path[name_loc], tree->name);
 		for (int i = 0; i < k; i++) {
 			uint32_t hash = (i < pre_hash_len) ?
-				((uint32_t *)tree->userdata)[k] :
+				((uint32_t *)tree->userdata)[i] :
 				entry_hash(path, tree, i, gcry);
 			uint32_t index = hash << (32 - log2m) >> (32 - log2m);
 			if (!(filter[index >> 3] & 1 << (index & 0x7))) {
