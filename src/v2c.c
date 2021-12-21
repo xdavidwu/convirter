@@ -436,12 +436,12 @@ size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
 		memset(b_match, 0, sizeof(int) * b->inode->children_len);
 		bool b_create[b->inode->children_len];
 		memset(b_create, 0, sizeof(bool) * b->inode->children_len);
-		int a_len = a ? a->inode->children_len : 1;
+		int a_len = (a && S_ISDIR(a->inode->stat.st_mode)) ? a->inode->children_len : 1;
 		bool a_remove[a_len];
 		memset(a_remove, 0, sizeof(bool) * a_len);
 		int max_len = 0;
 
-		if (a) {
+		if (a && S_ISDIR(a->inode->stat.st_mode)) {
 			for (int i = 0; i < a->inode->children_len; i++) {
 				int len = strlen(a->inode->children[i].name);
 				max_len = len > max_len ? len : max_len;
@@ -466,7 +466,7 @@ size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
 		// (prevent recurse everything twice)
 		enum v2c_build_layer_mode recur_mode = (mode == BUILD_LAYER_FULL) ?
 			BUILD_LAYER_TEST_DIR : mode;
-		if (a) {
+		if (a && S_ISDIR(a->inode->stat.st_mode)) {
 			for (int i = 0; i < a->inode->children_len; i++) {
 				if (!strncmp(b->inode->children[i].name, ".wh.", 4)) {
 					// no way to store names like whiteouts in OCI
