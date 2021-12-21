@@ -468,10 +468,6 @@ size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
 			BUILD_LAYER_TEST_DIR : mode;
 		if (a && S_ISDIR(a->inode->stat.st_mode)) {
 			for (int i = 0; i < a->inode->children_len; i++) {
-				if (!strncmp(b->inode->children[i].name, ".wh.", 4)) {
-					// no way to store names like whiteouts in OCI
-					continue;
-				}
 				bool found = false;
 				for (int j = 0; j < b->inode->children_len; j++) {
 					if (b_match[j]) {
