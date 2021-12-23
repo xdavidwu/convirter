@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <fts.h>
 #include <gcrypt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -128,108 +129,63 @@ static size_t estimate_reuse_by_filter(struct cvirt_io_entry *tree,
 	return 0;
 }
 
-static int64_t estimate_reuse(struct cvirt_io_entry *tree, int dirfd,
-		char *filter, char *pathbuf, gcry_md_hd_t gcry) {
-	int fd = openat(dirfd, filter, O_RDONLY | O_CLOEXEC);
-	if (fd < 0) {
-		fprintf(stderr, "Failed to open %s: %s\n", filter,
-			strerror(errno));
-		return -errno;
+static void find_filters_fts(struct cvirt_io_entry *tree, char *pathbuf, gcry_md_hd_t gcry) {
+	char *paths[] = {".", NULL};
+	FTS *ftsp = fts_open(paths, FTS_LOGICAL, NULL);
+	if (!ftsp) {
+		perror("fts_open");
+		exit(EXIT_FAILURE);
 	}
 
-	struct stat stat;
-	if (fstat(fd, &stat) < 0) {
-		fprintf(stderr, "Failed to fstat %s: %s\n", filter,
-			strerror(errno));
-		close(fd);
-		return -errno;
-	}
-	if (!S_ISREG(stat.st_mode)) {
-		// skip
-		close(fd);
-		return 0;
-	}
-	off_t sz = stat.st_size; // 2^log2m+1
-	if (!(sz & 1)) {
-		return -EINVAL;
-	}
-	int log2m = 0;
-	while (sz != 1) {
-		sz >>= 1;
-		log2m++;
-		if ((sz & 1) && sz != 1) {
-			return -EINVAL;
-		}
-	}
-	log2m += 3;
+	FTSENT *ftsent = NULL;
+	while ((ftsent = fts_read(ftsp))) {
+		if (ftsent->fts_info == FTS_F) {
+			if (ftsent->fts_namelen > 7 &&
+					!strcmp(&ftsent->fts_name[ftsent->fts_namelen - 7], ".filter")) {
+				off_t sz = ftsent->fts_statp->st_size; // 2^log2m+1
+				if (!(sz & 1)) {
+					continue;
+				}
+				int log2m = 0;
+				while (sz != 1) {
+					sz >>= 1;
+					log2m++;
+					if ((sz & 1) && sz != 1) {
+						continue;
+					}
+				}
+				log2m += 3;
 
-	uint8_t *buf = calloc(stat.st_size, 1);
-	assert(buf);
-	if (read(fd, buf, stat.st_size) < 0) {
-		fprintf(stderr, "Failed to read %s: %s\n", filter,
-			strerror(errno));
-		free(buf);
-		close(fd);
-		return -errno;
-	}
+				int fd = open(ftsent->fts_accpath, O_RDONLY | O_CLOEXEC);
+				if (fd < 0) {
+					fprintf(stderr, "Failed to open %s: %s\n",
+						ftsent->fts_accpath, strerror(errno));
+					continue;
+				}
 
-	int64_t res = estimate_reuse_by_filter(tree, &buf[1], log2m, buf[0],
-		pathbuf, 0, gcry);
+				uint8_t *buf = calloc(ftsent->fts_statp->st_size, 1);
+				assert(buf);
+				if (read(fd, buf, ftsent->fts_statp->st_size) < 0) {
+					fprintf(stderr, "Failed to read %s: %s\n",
+						ftsent->fts_accpath, strerror(errno));
+					free(buf);
+					close(fd);
+					continue;
+				}
 
-	free(buf);
-	close(fd);
-	return res;
-}
+				int64_t res = estimate_reuse_by_filter(tree, &buf[1], log2m, buf[0],
+					pathbuf, 0, gcry);
 
-static int scandir_filters(const struct dirent *a) {
-	if (a->d_type != DT_REG && a->d_type != DT_UNKNOWN) {
-		return 0;
+				printf("%s: %ld\n", ftsent->fts_accpath, res);
+				free(buf);
+				close(fd);
+			}
+		} // TODO handle others
 	}
-
-	int l = strlen(a->d_name);
-	// *.filter
-	if (l < 8) {
-		return 0;
+	if (errno) {
+		perror("fts_read");
 	}
-	if (strcmp(&a->d_name[l - 7], ".filter")) {
-		return 0;
-	}
-	return 1;
-}
-
-static int scandir_dirs(const struct dirent *a) {
-	if (a->d_type != DT_DIR && a->d_type != DT_UNKNOWN) {
-		return 0;
-	}
-	if (!strcmp(a->d_name, ".") || !strcmp(a->d_name, "..")) {
-		return 0;
-	}
-	return 1;
-}
-
-static void find_filters(struct cvirt_io_entry *tree, int dirfd,
-		const char *path, char *pathbuf, gcry_md_hd_t gcry) {
-	struct dirent **namelist;
-	int n = scandirat(dirfd, path, &namelist, scandir_filters, alphasort);
-	int fd = openat(dirfd, path, O_RDONLY | O_CLOEXEC);
-	if (fd < 0) {
-		fprintf(stderr, "Failed to open %s: %s\n", path,
-			strerror(errno));
-		return;
-	}
-	for (int a = 0; a < n; a++) {
-		printf("%s: %ld\n", namelist[a]->d_name, estimate_reuse(tree,
-			fd, namelist[a]->d_name, pathbuf, gcry));
-		free(namelist[a]);
-	}
-	free(namelist);
-	n = scandirat(dirfd, path, &namelist, scandir_dirs, alphasort);
-	for (int a = 0; a < n; a++) {
-		find_filters(tree, fd, namelist[a]->d_name, pathbuf, gcry);
-		free(namelist[a]);
-	}
-	free(namelist);
-	close(fd);
+	fts_close(ftsp);
 }
 
 #include <time.h>
@@ -256,7 +212,7 @@ int main(int argc, char *argv[]) {
 	printf("%ld\n", new - old);
 	old = new;
 
-	find_filters(tree, AT_FDCWD, ".", path_buffer, gcry);
+	find_filters_fts(tree, path_buffer, gcry);
 	new = clock();
 	printf("%ld\n", new - old);
 	old = new;
