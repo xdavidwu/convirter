@@ -235,34 +235,20 @@ static int output_cmp(const void *a, const void *b) {
 	return strcmp(as->image, bs->image);
 }
 
-#include <time.h>
 int main(int argc, char *argv[]) {
 	if (argc != 2) {
 		return EXIT_FAILURE;
 	}
-	clock_t old = clock(), new;
 	guestfs_h *guestfs = create_guestfs_mount_first_linux(argv[1], NULL);
-	new = clock();
-	printf("%ld\n", new - old);
-	old = new;
 	struct cvirt_io_entry *tree = cvirt_io_tree_from_guestfs(guestfs,
 		CVIRT_IO_TREE_CHECKSUM | CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS);
-	new = clock();
-	printf("%ld\n", new - old);
-	old = new;
 	int max_len = max_filename_length(tree);
 	char path_buffer[max_len + 1];
 	gcry_md_hd_t gcry;
 	gcry_md_open(&gcry, GCRY_MD_SHA256, GCRY_MD_FLAG_HMAC);
 	pre_hash(tree, path_buffer, 0, gcry);
-	new = clock();
-	printf("%ld\n", new - old);
-	old = new;
 
 	find_filters_fts(tree, path_buffer, gcry);
-	new = clock();
-	printf("%ld\n", new - old);
-	old = new;
 
 	qsort(output, output_idx, sizeof (struct findlayer_result), output_cmp);
 	for (int i = 0; i < output_idx; i++) {
