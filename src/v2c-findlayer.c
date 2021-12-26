@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <fts.h>
 #include <gcrypt.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,16 @@
 #include "../../common/guestfs.h"
 
 static const int pre_hash_len = 15;
+
+struct findlayer_result {
+	char *image;
+	size_t estimated_reuse;
+};
+
+static struct findlayer_result *output = NULL;
+static int output_initial_size = 128;
+static int output_size = 0;
+static int output_idx = 0;
 
 static uint32_t entry_hash(const char *path, struct cvirt_io_entry *entry,
 		uint8_t i, gcry_md_hd_t gcry) {
@@ -173,10 +184,36 @@ static void find_filters_fts(struct cvirt_io_entry *tree, char *pathbuf, gcry_md
 					continue;
 				}
 
-				int64_t res = estimate_reuse_by_filter(tree, &buf[1], log2m, buf[0],
-					pathbuf, 0, gcry);
+				if (output_idx == output_size) {\
+					output_size = output_size ? output_size * 2 : output_initial_size;
+					output = realloc(output, sizeof(struct findlayer_result) * output_size);
+					if (!output) {
+						perror("realloc");
+						exit(EXIT_FAILURE);
+					}
+				}
 
-				printf("%s: %ld\n", ftsent->fts_accpath, res);
+				int image_len = strlen(ftsent->fts_accpath) - 9;
+				output[output_idx].image = strndup(
+					&ftsent->fts_accpath[2], image_len);
+				if (!output[output_idx].image) {
+					perror("strdup");
+					exit(EXIT_FAILURE);
+				}
+				bool is_digest = false;
+				while (image_len--) {
+					if (output[output_idx].image[image_len] == ':') {
+						is_digest = true;
+					} else if (output[output_idx].image[image_len] == '/') {
+						output[output_idx].image[image_len] =
+							is_digest ? '@' : ':';
+						break;
+					}
+				}
+				output[output_idx++].estimated_reuse =
+					estimate_reuse_by_filter(tree, &buf[1],
+					log2m, buf[0], pathbuf, 0, gcry);
+
 				free(buf);
 				close(fd);
 			}
@@ -216,6 +253,12 @@ int main(int argc, char *argv[]) {
 	new = clock();
 	printf("%ld\n", new - old);
 	old = new;
+
+	for (int i = 0; i < output_idx; i++) {
+		printf("%s: %ld\n", output[i].image, output[i].estimated_reuse);
+		free(output[i].image);
+	}
+	free(output);
 
 	free_pre_hash(tree);
 	gcry_md_close(gcry);
