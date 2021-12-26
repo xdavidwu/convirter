@@ -39,7 +39,7 @@ Convert a VM image into OCI-compatible container image.\n\
       --no-systemd-cleanup        Disable removing systemd units that will\n\
                                   likely fail and is unneeded in containers\n\
       --layer-reuse=ARCHIVE       Try to reuse layers from ARCHIVE\n\
-      --skip-btrfs-snapshots      Skip btrfs snapshots\n\
+      --keep-btrfs-snapshots      Do not try to ignore btrfs snapshots\n\
 \n\
 Options below set respective config of output container image:\n"
 COMMON_EXEC_CONFIG_OPTIONS_HELP;
@@ -50,7 +50,7 @@ static const struct option long_options[] = {
 	{"compression",	required_argument,	NULL,	1},
 	{"no-systemd-cleanup",	no_argument,	NULL,	2},
 	{"layer-reuse",	required_argument,	NULL,	3},
-	{"skip-btrfs-snapshots",no_argument,	NULL,	4},
+	{"keep-btrfs-snapshots",no_argument,	NULL,	4},
 	COMMON_EXEC_CONFIG_LONG_OPTIONS(common_exec_config_start),
 	{0},
 };
@@ -81,7 +81,7 @@ struct v2c_state {
 		bool disable_systemd_cleanup;
 		struct common_exec_config exec;
 		int layer_reuse_fd;
-		bool skip_btrfs_snapshots;
+		bool keep_btrfs_snapshots;
 	} config;
 };
 
@@ -131,7 +131,7 @@ static int parse_options(struct v2c_state *state, int argc, char *argv[]) {
 			}
 			break;
 		case 4:
-			state->config.skip_btrfs_snapshots = true;
+			state->config.keep_btrfs_snapshots = true;
 			break;
 		}
 	}
@@ -625,9 +625,9 @@ int main(int argc, char *argv[]) {
 
 	state.modification_end = time(NULL);
 
-	uint32_t flags = 0;
-	if (state.config.skip_btrfs_snapshots) {
-		flags |= CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
+	uint32_t flags = CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
+	if (state.config.keep_btrfs_snapshots) {
+		flags ^= CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
 	}
 	struct cvirt_io_entry *guestfs_tree = cvirt_io_tree_from_guestfs(state.guestfs, flags);
 
