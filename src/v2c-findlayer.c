@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <fts.h>
 #include <gcrypt.h>
+#include <getopt.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +27,39 @@ static struct findlayer_result *output = NULL;
 static int output_initial_size = 128;
 static int output_size = 0;
 static int output_idx = 0;
+
+struct findlayer_config {
+	bool best_image_only;
+};
+
+static struct findlayer_config config = {0};
+
+static const char usage[] = "\
+Usage: %s [OPTION]... INPUT\n\
+Find best container image for a VM image for v2c layer reuse.\n\
+\n\
+    -b, --best-only  Print only best container image name, instead of all\n\
+                     considered image names and estimated reused bytes.\n";
+
+
+static const struct option long_options[] = {
+	{"best-only",	no_argument,	NULL,	'b'},
+	{0},
+};
+
+static int parse_options(struct findlayer_config *config, int argc, char *argv[]) {
+	int opt;
+	while ((opt = getopt_long(argc, argv, "b", long_options, NULL)) != -1) {
+		switch (opt) {
+		case '?':
+			return -EINVAL;
+		case 'b':
+			config->best_image_only = true;
+			break;
+		}
+	}
+	return 0;
+}
 
 static uint32_t entry_hash(const char *path, struct cvirt_io_entry *entry,
 		uint8_t i, gcry_md_hd_t gcry) {
@@ -236,10 +270,15 @@ static int output_cmp(const void *a, const void *b) {
 }
 
 int main(int argc, char *argv[]) {
-	if (argc != 2) {
-		return EXIT_FAILURE;
+	if (parse_options(&config, argc, argv) < 0 || argc - optind != 1) {
+		fprintf(stderr, usage, argv[0]);
+		exit(EXIT_FAILURE);
 	}
-	guestfs_h *guestfs = create_guestfs_mount_first_linux(argv[1], NULL);
+	guestfs_h *guestfs = create_guestfs_mount_first_linux(argv[optind], NULL);
+	if (!guestfs) {
+		exit(EXIT_FAILURE);
+	}
+
 	struct cvirt_io_entry *tree = cvirt_io_tree_from_guestfs(guestfs,
 		CVIRT_IO_TREE_CHECKSUM | CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS);
 	int max_len = max_filename_length(tree);
@@ -251,8 +290,13 @@ int main(int argc, char *argv[]) {
 	find_filters_fts(tree, path_buffer, gcry);
 
 	qsort(output, output_idx, sizeof (struct findlayer_result), output_cmp);
+	if (config.best_image_only && output_idx) {
+		puts(output[output_idx - 1].image);
+	}
 	for (int i = 0; i < output_idx; i++) {
-		printf("%s: %ld\n", output[i].image, output[i].estimated_reuse);
+		if (!config.best_image_only) {
+			printf("%s: %ld\n", output[i].image, output[i].estimated_reuse);
+		}
 		free(output[i].image);
 	}
 	free(output);
