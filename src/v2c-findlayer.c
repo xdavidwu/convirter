@@ -225,6 +225,16 @@ static void find_filters_fts(struct cvirt_io_entry *tree, char *pathbuf, gcry_md
 	fts_close(ftsp);
 }
 
+static int output_cmp(const void *a, const void *b) {
+	const struct findlayer_result *as = a, *bs = b;
+	if (as->estimated_reuse > bs->estimated_reuse) {
+		return 1;
+	} else if (as->estimated_reuse < bs->estimated_reuse) {
+		return -1;
+	}
+	return strcmp(as->image, bs->image);
+}
+
 #include <time.h>
 int main(int argc, char *argv[]) {
 	if (argc != 2) {
@@ -254,6 +264,7 @@ int main(int argc, char *argv[]) {
 	printf("%ld\n", new - old);
 	old = new;
 
+	qsort(output, output_idx, sizeof (struct findlayer_result), output_cmp);
 	for (int i = 0; i < output_idx; i++) {
 		printf("%s: %ld\n", output[i].image, output[i].estimated_reuse);
 		free(output[i].image);
