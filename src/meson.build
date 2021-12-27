@@ -18,9 +18,9 @@ v2c_mkfindlayerfilter = executable(
   install: true
 )
 
-v2c_findlayer = executable(
-  'v2c-findlayer',
-  'v2c-findlayer.c',
+v2c_findcontainer = executable(
+  'v2c-findcontainer',
+  'v2c-findcontainer.c',
   '../common/guestfs.c',
   dependencies: [libgcrypt, libguestfs],
   link_with: [libconvirter],
