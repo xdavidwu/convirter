@@ -30,6 +30,7 @@ static int output_idx = 0;
 
 struct findlayer_config {
 	bool best_image_only;
+	const char *data;
 	bool keep_btrfs_snapshots;
 };
 
@@ -42,23 +43,28 @@ Find best container image for a VM image for v2c layer reuse.\n\
   -b, --best-only             Print only best container image name, instead of\n\
                               all considered image names and estimated reused\n\
                               bytes\n\
+  -d, --data=DIR              Use DIR as data directory instead of .\n\
       --keep-btrfs-snapshots  Do not try to ignore btrfs snapshots\n";
 
 
 static const struct option long_options[] = {
 	{"best-only",			no_argument,	NULL,	'b'},
+	{"data",		required_argument,	NULL,	'd'},
 	{"keep-btrfs-snapshots",	no_argument,	NULL,	1},
 	{0},
 };
 
 static int parse_options(struct findlayer_config *config, int argc, char *argv[]) {
 	int opt;
-	while ((opt = getopt_long(argc, argv, "b", long_options, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "bd:", long_options, NULL)) != -1) {
 		switch (opt) {
 		case '?':
 			return -EINVAL;
 		case 'b':
 			config->best_image_only = true;
+			break;
+		case 'd':
+			config->data = optarg;
 			break;
 		case 1:
 			config->keep_btrfs_snapshots = true;
@@ -298,6 +304,13 @@ int main(int argc, char *argv[]) {
 	gcry_md_hd_t gcry;
 	gcry_md_open(&gcry, GCRY_MD_SHA256, GCRY_MD_FLAG_HMAC);
 	pre_hash(tree, path_buffer, 0, gcry);
+
+	if (config.data) {
+		if (chdir(config.data) < 0) {
+			perror("chdir");
+			exit(EXIT_FAILURE);
+		}
+	}
 
 	find_filters_fts(tree, path_buffer, gcry);
 
