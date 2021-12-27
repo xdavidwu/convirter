@@ -38,10 +38,10 @@ static struct findlayer_config config = {0};
 
 static const char usage[] = "\
 Usage: %s [OPTION]... INPUT\n\
-Find best container image for a VM image for v2c layer reuse.\n\
+Find the best container image for a VM image for v2c layer reuse.\n\
 \n\
-  -b, --best-only             Print only best container image name, instead of\n\
-                              all considered image names and estimated reused\n\
+  -b, --best-only             Print only the best container image name, instead\n\
+                              of all considered image names and estimated reused\n\
                               bytes\n\
   -d, --data=DIR              Use DIR as data directory instead of .\n\
       --keep-btrfs-snapshots  Do not try to ignore btrfs snapshots\n";
