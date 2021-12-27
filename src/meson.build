@@ -18,6 +18,13 @@ v2c_mkfilter = executable(
   install: true
 )
 
+install_data(
+  'v2c-mkdb.sh',
+  rename: ['v2c-mkdb'],
+  install_mode: 'rwxr-xr-x',
+  install_dir: get_option('bindir')
+)
+
 v2c_findcontainer = executable(
   'v2c-findcontainer',
   'v2c-findcontainer.c',
