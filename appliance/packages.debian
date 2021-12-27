@@ -1,3 +1,0 @@
-# supermin fails when there are no configuration files in required packages
-# let's work around this by installing an extra package with conf file for now
-libc6
