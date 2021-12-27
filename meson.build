@@ -21,10 +21,6 @@ libconvirter = library(
   install: true
 )
 
-if get_option('build_appliance')
-  subdir('appliance')
-endif
-
 subdir('src')
 subdir('tools')
 subdir('initramfs')
