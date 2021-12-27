@@ -9,9 +9,9 @@ v2c = executable(
   install: true
 )
 
-v2c_mkfindlayerfilter = executable(
-  'v2c-mkfindlayerfilter',
-  'v2c-mkfindlayerfilter.c',
+v2c_mkfilter = executable(
+  'v2c-mkfilter',
+  'v2c-mkfilter.c',
   dependencies: [libgcrypt, libm],
   link_with: [libconvirter],
   include_directories: [libconvirter_include],

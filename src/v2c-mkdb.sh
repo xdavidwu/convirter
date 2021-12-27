@@ -12,7 +12,7 @@ handle_image () {
 	IMAGE=$(mktemp)
 	skopeo copy "docker://$1@$2" "oci-archive:$IMAGE"
 	# TODO debug double free on v2c-mkfindlayerfilter with some images
-	v2c-mkfindlayerfilter "$IMAGE" "$1/$2.filter" || true
+	v2c-mkfilter "$IMAGE" "$1/$2.filter" || true
 	rm "$IMAGE"
 }
 
