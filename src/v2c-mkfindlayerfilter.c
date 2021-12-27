@@ -1,5 +1,5 @@
-#include <convirter/io/entry.h>
-#include <convirter/io/xattr.h>
+#include <convirter/mtree/entry.h>
+#include <convirter/mtree/xattr.h>
 #include <convirter/oci-r/index.h>
 #include <convirter/oci-r/layer.h>
 #include <convirter/oci-r/manifest.h>
@@ -15,7 +15,7 @@
 
 static const double false_positive_rate = 10e-5;
 
-static int count_files(struct cvirt_io_entry *tree) {
+static int count_files(struct cvirt_mtree_entry *tree) {
 	if (S_ISREG(tree->inode->stat.st_mode)) {
 		return 1;
 	} else if (S_ISDIR(tree->inode->stat.st_mode)) {
@@ -28,7 +28,7 @@ static int count_files(struct cvirt_io_entry *tree) {
 	return 0;
 }
 
-static int max_filename_length(struct cvirt_io_entry *tree) {
+static int max_filename_length(struct cvirt_mtree_entry *tree) {
 	if (S_ISREG(tree->inode->stat.st_mode)) {
 		return strlen(tree->name);
 	} else if (S_ISDIR(tree->inode->stat.st_mode)) {
@@ -60,7 +60,7 @@ static int bloom_hashs(int size, int entries) {
 	return round((size /(double) entries) * log(2));
 }
 
-static uint32_t entry_hash(const char *path, struct cvirt_io_entry *entry,
+static uint32_t entry_hash(const char *path, struct cvirt_mtree_entry *entry,
 		uint8_t i, gcry_md_hd_t gcry) {
 	gcry_md_reset(gcry);
 	gcry_md_setkey(gcry, &i, 1);
@@ -84,7 +84,7 @@ static uint32_t entry_hash(const char *path, struct cvirt_io_entry *entry,
 	return part;
 }
 
-static void build_filter(struct cvirt_io_entry *tree, uint8_t *filter, int log2m,
+static void build_filter(struct cvirt_mtree_entry *tree, uint8_t *filter, int log2m,
 		int k, char *path, int name_loc, gcry_md_hd_t gcry) {
 	if (S_ISREG(tree->inode->stat.st_mode)) {
 		strcpy(&path[name_loc], tree->name);
@@ -132,7 +132,7 @@ int main(int argc, char *argv[]) {
 	struct cvirt_oci_r_layer *layer =
 		cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
 		cvirt_oci_r_manifest_get_layer_compression(manifest, 0));
-	struct cvirt_io_entry *tree = cvirt_io_tree_from_oci_layer(layer, CVIRT_IO_TREE_CHECKSUM);
+	struct cvirt_mtree_entry *tree = cvirt_mtree_tree_from_oci_layer(layer, CVIRT_MTREE_TREE_CHECKSUM);
 	cvirt_oci_r_layer_destroy(layer);
 	int len = cvirt_oci_r_manifest_get_layers_length(manifest);
 	for (int i = 1; i < len; i++) {
@@ -140,7 +140,7 @@ int main(int argc, char *argv[]) {
 			cvirt_oci_r_layer_from_archive_blob(fd,
 			cvirt_oci_r_manifest_get_layer_digest(manifest, i),
 			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
-		cvirt_io_tree_oci_apply_layer(tree, layer, CVIRT_IO_TREE_CHECKSUM);
+		cvirt_mtree_tree_oci_apply_layer(tree, layer, CVIRT_MTREE_TREE_CHECKSUM);
 		cvirt_oci_r_layer_destroy(layer);
 	}
 	cvirt_oci_r_manifest_destroy(manifest);
@@ -154,7 +154,7 @@ int main(int argc, char *argv[]) {
 	uint8_t *bits = calloc(1 << (log2m - 3), sizeof(uint8_t));
 	if (!bits) {
 		fprintf(stderr, "Unable to allocate %d bytes\n", 1 << (log2m - 3));
-		cvirt_io_tree_destroy(tree);
+		cvirt_mtree_tree_destroy(tree);
 		close(fdout);
 		return EXIT_FAILURE;
 	}
@@ -177,6 +177,6 @@ int main(int argc, char *argv[]) {
 
 	free(bits);
 	close(fdout);
-	cvirt_io_tree_destroy(tree);
+	cvirt_mtree_tree_destroy(tree);
 	return res < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }

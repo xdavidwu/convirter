@@ -1,4 +1,4 @@
-#include <convirter/io/entry.h>
+#include <convirter/mtree/entry.h>
 #include <convirter/oci-r/index.h>
 #include <convirter/oci-r/layer.h>
 #include <convirter/oci-r/manifest.h>
@@ -93,7 +93,7 @@ static void print_stat(const struct stat *st) {
 	fputs(time, stdout);
 }
 
-static void print_tree(const struct cvirt_io_entry *entry, int level) {
+static void print_tree(const struct cvirt_mtree_entry *entry, int level) {
 	if (ignore_c2v && level == 1 && !strcmp(entry->name, ".c2v")) {
 		return;
 	}
@@ -119,7 +119,7 @@ static void print_tree(const struct cvirt_io_entry *entry, int level) {
 }
 
 int main(int argc, char *argv[]) {
-	struct cvirt_io_entry *tree;
+	struct cvirt_mtree_entry *tree;
 
 	int opt;
 	while ((opt = getopt_long(argc, argv, "", long_options, NULL)) != -1) {
@@ -141,14 +141,14 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
-	uint32_t flags = skip_checksum ? 0 : CVIRT_IO_TREE_CHECKSUM;
+	uint32_t flags = skip_checksum ? 0 : CVIRT_MTREE_TREE_CHECKSUM;
 	if (!strncmp(argv[optind], "disk-image:", 11)) {
 		guestfs_h *guestfs = create_guestfs_mount_first_linux(&argv[optind][11], NULL);
 		if (!guestfs) {
 			exit(EXIT_FAILURE);
 		}
 
-		tree = cvirt_io_tree_from_guestfs(guestfs, flags);
+		tree = cvirt_mtree_tree_from_guestfs(guestfs, flags);
 
 		guestfs_umount_all(guestfs);
 		guestfs_shutdown(guestfs);
@@ -166,7 +166,7 @@ int main(int argc, char *argv[]) {
 		struct cvirt_oci_r_layer *layer =
 			cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
 			cvirt_oci_r_manifest_get_layer_compression(manifest, 0));
-		tree = cvirt_io_tree_from_oci_layer(layer, flags);
+		tree = cvirt_mtree_tree_from_oci_layer(layer, flags);
 		cvirt_oci_r_layer_destroy(layer);
 		int len = cvirt_oci_r_manifest_get_layers_length(manifest);
 		for (int i = 1; i < len; i++) {
@@ -174,7 +174,7 @@ int main(int argc, char *argv[]) {
 				cvirt_oci_r_layer_from_archive_blob(fd,
 				cvirt_oci_r_manifest_get_layer_digest(manifest, i),
 				cvirt_oci_r_manifest_get_layer_compression(manifest, i));
-			cvirt_io_tree_oci_apply_layer(tree, layer, flags);
+			cvirt_mtree_tree_oci_apply_layer(tree, layer, flags);
 			cvirt_oci_r_layer_destroy(layer);
 		}
 		cvirt_oci_r_manifest_destroy(manifest);
@@ -188,7 +188,7 @@ int main(int argc, char *argv[]) {
 
 	print_time = time(NULL);
 	print_tree(tree, 0);
-	cvirt_io_tree_destroy(tree);
+	cvirt_mtree_tree_destroy(tree);
 
 	return 0;
 }

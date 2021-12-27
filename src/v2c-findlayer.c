@@ -1,7 +1,7 @@
 #define _GNU_SOURCE
 #include <assert.h>
-#include <convirter/io/entry.h>
-#include <convirter/io/xattr.h>
+#include <convirter/mtree/entry.h>
+#include <convirter/mtree/xattr.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -74,7 +74,7 @@ static int parse_options(struct findlayer_config *config, int argc, char *argv[]
 	return 0;
 }
 
-static uint32_t entry_hash(const char *path, struct cvirt_io_entry *entry,
+static uint32_t entry_hash(const char *path, struct cvirt_mtree_entry *entry,
 		uint8_t i, gcry_md_hd_t gcry) {
 	gcry_md_reset(gcry);
 	gcry_md_setkey(gcry, &i, 1);
@@ -98,7 +98,7 @@ static uint32_t entry_hash(const char *path, struct cvirt_io_entry *entry,
 	return part;
 }
 
-static int max_filename_length(struct cvirt_io_entry *tree) {
+static int max_filename_length(struct cvirt_mtree_entry *tree) {
 	if (S_ISREG(tree->inode->stat.st_mode)) {
 		return strlen(tree->name);
 	} else if (S_ISDIR(tree->inode->stat.st_mode)) {
@@ -112,7 +112,7 @@ static int max_filename_length(struct cvirt_io_entry *tree) {
 	return 0;
 }
 
-static void pre_hash(struct cvirt_io_entry *tree, char *path, int name_loc,
+static void pre_hash(struct cvirt_mtree_entry *tree, char *path, int name_loc,
 		gcry_md_hd_t gcry) {
 	if (S_ISREG(tree->inode->stat.st_mode)) {
 		strcpy(&path[name_loc], tree->name);
@@ -136,7 +136,7 @@ static void pre_hash(struct cvirt_io_entry *tree, char *path, int name_loc,
 	}
 }
 
-static void free_pre_hash(struct cvirt_io_entry *tree) {
+static void free_pre_hash(struct cvirt_mtree_entry *tree) {
 	if (S_ISREG(tree->inode->stat.st_mode)) {
 		free(tree->userdata);
 	} else if (S_ISDIR(tree->inode->stat.st_mode)) {
@@ -148,7 +148,7 @@ static void free_pre_hash(struct cvirt_io_entry *tree) {
 
 static const size_t ustar_logical_record_size = 512;
 
-static size_t estimate_reuse_by_filter(struct cvirt_io_entry *tree,
+static size_t estimate_reuse_by_filter(struct cvirt_mtree_entry *tree,
 		uint8_t *filter, int log2m, int k, char *path, int name_loc,
 		gcry_md_hd_t gcry) {
 	if (S_ISREG(tree->inode->stat.st_mode)) {
@@ -187,7 +187,7 @@ static size_t estimate_reuse_by_filter(struct cvirt_io_entry *tree,
 	return 0;
 }
 
-static void find_filters_fts(struct cvirt_io_entry *tree, char *pathbuf, gcry_md_hd_t gcry) {
+static void find_filters_fts(struct cvirt_mtree_entry *tree, char *pathbuf, gcry_md_hd_t gcry) {
 	char *paths[] = {".", NULL};
 	FTS *ftsp = fts_open(paths, FTS_LOGICAL, NULL);
 	if (!ftsp) {
@@ -292,13 +292,13 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
-	uint32_t flags = CVIRT_IO_TREE_CHECKSUM |
-		CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
+	uint32_t flags = CVIRT_MTREE_TREE_CHECKSUM |
+		CVIRT_MTREE_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
 	if (config.keep_btrfs_snapshots) {
-		flags ^= CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
+		flags ^= CVIRT_MTREE_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
 	}
 
-	struct cvirt_io_entry *tree = cvirt_io_tree_from_guestfs(guestfs, flags);
+	struct cvirt_mtree_entry *tree = cvirt_mtree_tree_from_guestfs(guestfs, flags);
 	int max_len = max_filename_length(tree);
 	char path_buffer[max_len + 1];
 	gcry_md_hd_t gcry;
@@ -328,7 +328,7 @@ int main(int argc, char *argv[]) {
 
 	free_pre_hash(tree);
 	gcry_md_close(gcry);
-	cvirt_io_tree_destroy(tree);
+	cvirt_mtree_tree_destroy(tree);
 	return 0;
 }
 

@@ -8,4 +8,4 @@ libconvirter_files += files(
 )
 subdir('oci')
 subdir('oci-r')
-subdir('io')
+subdir('mtree')

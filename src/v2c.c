@@ -12,8 +12,8 @@
 
 #include <archive.h>
 #include <archive_entry.h>
-#include <convirter/io/entry.h>
-#include <convirter/io/xattr.h>
+#include <convirter/mtree/entry.h>
+#include <convirter/mtree/xattr.h>
 #include <convirter/oci/blob.h>
 #include <convirter/oci/config.h>
 #include <convirter/oci/image.h>
@@ -282,7 +282,7 @@ static int setup_config(struct v2c_state *state, struct cvirt_oci_config *config
 
 static const size_t ustar_logical_record_size = 512;
 
-size_t new_entry(struct v2c_state *state, struct cvirt_io_entry *entry,
+size_t new_entry(struct v2c_state *state, struct cvirt_mtree_entry *entry,
 		const char *path, bool dry_run) {
 	archive_entry_clear(state->layer_entry);
 	archive_entry_set_pathname(state->layer_entry, &path[1]);
@@ -362,7 +362,7 @@ static bool compare_stat(struct stat *a, struct stat *b) {
 	return false;
 }
 
-static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b) {
+static bool compare_xattr(struct cvirt_mtree_inode *a, struct cvirt_mtree_inode *b) {
 	bool b_compared[b->xattrs_len];
 	memset(b_compared, 0, sizeof(bool) * b->xattrs_len);
 	for (int i = 0; i < a->xattrs_len; i++) {
@@ -400,7 +400,7 @@ enum v2c_build_layer_mode {
 	BUILD_LAYER_TEST_DIR
 };
 
-size_t build_layer(struct cvirt_io_entry *a, struct cvirt_io_entry *b,
+size_t build_layer(struct cvirt_mtree_entry *a, struct cvirt_mtree_entry *b,
 		const char *path, enum v2c_build_layer_mode mode, struct v2c_state *state) {
 	bool differs = false;
 	if (!a) {
@@ -548,7 +548,7 @@ create_entry_if_differs:
 	return 0;
 }
 
-void timestamp_fixup(struct cvirt_io_entry *tree, struct v2c_state *state) {
+void timestamp_fixup(struct cvirt_mtree_entry *tree, struct v2c_state *state) {
 	struct stat *stat = &tree->inode->stat;
 	if (stat->st_atim.tv_sec >= state->modification_start &&
 			stat->st_atim.tv_sec <= state->modification_end) {
@@ -625,11 +625,11 @@ int main(int argc, char *argv[]) {
 
 	state.modification_end = time(NULL);
 
-	uint32_t flags = CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
+	uint32_t flags = CVIRT_MTREE_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
 	if (state.config.keep_btrfs_snapshots) {
-		flags ^= CVIRT_IO_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
+		flags ^= CVIRT_MTREE_TREE_GUESTFS_BTRFS_SKIP_SNAPSHOTS;
 	}
-	struct cvirt_io_entry *guestfs_tree = cvirt_io_tree_from_guestfs(state.guestfs, flags);
+	struct cvirt_mtree_entry *guestfs_tree = cvirt_mtree_tree_from_guestfs(state.guestfs, flags);
 
 	if (state.config.set_modification_epoch) {
 		timestamp_fixup(guestfs_tree, &state);
@@ -639,7 +639,7 @@ int main(int argc, char *argv[]) {
 	struct cvirt_oci_manifest *manifest = cvirt_oci_manifest_new();
 	struct cvirt_oci_config *config = cvirt_oci_config_new();
 
-	struct cvirt_io_entry *reused_tree = NULL;
+	struct cvirt_mtree_entry *reused_tree = NULL;
 	size_t reused = 0;
 	if (state.config.layer_reuse_fd) {
 		state.layer_link_resolver = archive_entry_linkresolver_new();
@@ -658,19 +658,19 @@ int main(int argc, char *argv[]) {
 				state.config.layer_reuse_fd, manifest_digest);
 		int len = cvirt_oci_r_manifest_get_layers_length(from_manifest);
 
-		struct cvirt_io_entry *tree;
+		struct cvirt_mtree_entry *tree;
 
 		struct cvirt_oci_r_layer *layer = cvirt_oci_r_layer_from_archive_blob(
 			state.config.layer_reuse_fd,
 			cvirt_oci_r_manifest_get_layer_digest(from_manifest, 0),
 			cvirt_oci_r_manifest_get_layer_compression(from_manifest, 0));
-		tree = cvirt_io_tree_from_oci_layer(layer, 0);
+		tree = cvirt_mtree_tree_from_oci_layer(layer, 0);
 		for (int i = 1; i < len; i++) {
 			struct cvirt_oci_r_layer *layer = cvirt_oci_r_layer_from_archive_blob(
 				state.config.layer_reuse_fd,
 				cvirt_oci_r_manifest_get_layer_digest(from_manifest, i),
 				cvirt_oci_r_manifest_get_layer_compression(from_manifest, i));
-			cvirt_io_tree_oci_apply_layer(tree, layer, 0);
+			cvirt_mtree_tree_oci_apply_layer(tree, layer, 0);
 		}
 
 		state.layer_link_resolver = archive_entry_linkresolver_new();
@@ -711,7 +711,7 @@ int main(int argc, char *argv[]) {
 			archive_format(state.layer_archive));
 
 		build_layer(reused_tree, guestfs_tree, "/", BUILD_LAYER_FULL, &state);
-		cvirt_io_tree_destroy(guestfs_tree);
+		cvirt_mtree_tree_destroy(guestfs_tree);
 
 		archive_entry_free(state.layer_entry);
 		archive_entry_linkresolver_free(state.layer_link_resolver);

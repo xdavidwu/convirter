@@ -1,5 +1,5 @@
-#include <convirter/io/entry.h>
-#include <convirter/io/xattr.h>
+#include <convirter/mtree/entry.h>
+#include <convirter/mtree/xattr.h>
 #include <convirter/oci-r/index.h>
 #include <convirter/oci-r/layer.h>
 #include <convirter/oci-r/manifest.h>
@@ -93,7 +93,7 @@ static bool compare_stat(struct stat *a, struct stat *b, const char *path) {
 	return false;
 }
 
-static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b, const char *path) {
+static bool compare_xattr(struct cvirt_mtree_inode *a, struct cvirt_mtree_inode *b, const char *path) {
 	bool b_compared[b->xattrs_len];
 	memset(b_compared, 0, sizeof(bool) * b->xattrs_len);
 	for (int i = 0; i < a->xattrs_len; i++) {
@@ -131,7 +131,7 @@ static bool compare_xattr(struct cvirt_io_inode *a, struct cvirt_io_inode *b, co
 	return false;
 }
 
-static bool diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entry *b, const char *path) {
+static bool diff_tree(const struct cvirt_mtree_entry *a, const struct cvirt_mtree_entry *b, const char *path) {
 	int res = 0;
 	bool differs = false;
 	if (ignore_c2v && !strcmp(".c2v", path)) {
@@ -210,15 +210,15 @@ static bool diff_tree(const struct cvirt_io_entry *a, const struct cvirt_io_entr
 	return differs;
 }
 
-static struct cvirt_io_entry *get_tree_from_arg(const char *arg, uint32_t flags) {
-	struct cvirt_io_entry *tree;
+static struct cvirt_mtree_entry *get_tree_from_arg(const char *arg, uint32_t flags) {
+	struct cvirt_mtree_entry *tree;
 	if (!strncmp(arg, "disk-image:", 11)) {
 		guestfs_h *guestfs = create_guestfs_mount_first_linux(&arg[11], NULL);
 		if (!guestfs) {
 			exit(2);
 		}
 
-		tree = cvirt_io_tree_from_guestfs(guestfs, flags);
+		tree = cvirt_mtree_tree_from_guestfs(guestfs, flags);
 
 		guestfs_umount_all(guestfs);
 		guestfs_shutdown(guestfs);
@@ -236,7 +236,7 @@ static struct cvirt_io_entry *get_tree_from_arg(const char *arg, uint32_t flags)
 		struct cvirt_oci_r_layer *layer =
 			cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
 			cvirt_oci_r_manifest_get_layer_compression(manifest, 0));
-		tree = cvirt_io_tree_from_oci_layer(layer, flags);
+		tree = cvirt_mtree_tree_from_oci_layer(layer, flags);
 		cvirt_oci_r_layer_destroy(layer);
 		int len = cvirt_oci_r_manifest_get_layers_length(manifest);
 		for (int i = 1; i < len; i++) {
@@ -244,7 +244,7 @@ static struct cvirt_io_entry *get_tree_from_arg(const char *arg, uint32_t flags)
 				cvirt_oci_r_layer_from_archive_blob(fd,
 				cvirt_oci_r_manifest_get_layer_digest(manifest, i),
 				cvirt_oci_r_manifest_get_layer_compression(manifest, i));
-			cvirt_io_tree_oci_apply_layer(tree, layer, flags);
+			cvirt_mtree_tree_oci_apply_layer(tree, layer, flags);
 			cvirt_oci_r_layer_destroy(layer);
 		}
 		cvirt_oci_r_manifest_destroy(manifest);
@@ -278,12 +278,12 @@ int main(int argc, char *argv[]) {
 		exit(2);
 	}
 
-	uint32_t flags = skip_checksum ? 0 : CVIRT_IO_TREE_CHECKSUM;
-	struct cvirt_io_entry *a = get_tree_from_arg(argv[optind], flags);
-	struct cvirt_io_entry *b = get_tree_from_arg(argv[optind + 1], flags);
+	uint32_t flags = skip_checksum ? 0 : CVIRT_MTREE_TREE_CHECKSUM;
+	struct cvirt_mtree_entry *a = get_tree_from_arg(argv[optind], flags);
+	struct cvirt_mtree_entry *b = get_tree_from_arg(argv[optind + 1], flags);
 	bool differs = diff_tree(a, b, "");
-	cvirt_io_tree_destroy(a);
-	cvirt_io_tree_destroy(b);
+	cvirt_mtree_tree_destroy(a);
+	cvirt_mtree_tree_destroy(b);
 
 	return differs ? 1 : 0;
 }

@@ -1,7 +1,7 @@
 #include <archive.h>
 #include <archive_entry.h>
 #include <assert.h>
-#include <convirter/io/entry.h>
+#include <convirter/mtree/entry.h>
 #include <convirter/oci-r/config.h>
 #include <convirter/oci-r/index.h>
 #include <convirter/oci-r/layer.h>
@@ -547,7 +547,7 @@ static int generate_init_script(struct c2v_state *state,
 
 static int block_sz = 4096;
 
-static size_t estimate_disk_usage(const struct cvirt_io_entry *entry) {
+static size_t estimate_disk_usage(const struct cvirt_mtree_entry *entry) {
 	if (S_ISREG(entry->inode->stat.st_mode)) {
 		return (entry->inode->stat.st_size + block_sz - 1) / block_sz * block_sz;
 	} else if (S_ISDIR(entry->inode->stat.st_mode)) {
@@ -560,7 +560,7 @@ static size_t estimate_disk_usage(const struct cvirt_io_entry *entry) {
 	return 0;
 }
 
-static void restore_mtime(struct c2v_state *state, struct cvirt_io_entry *entry,
+static void restore_mtime(struct c2v_state *state, struct cvirt_mtree_entry *entry,
 		const char *path) {
 	for (int i = 0; i < entry->inode->children_len; i++) {
 		if (!S_ISDIR(entry->inode->children[i].inode->stat.st_mode)) {
@@ -599,12 +599,12 @@ int main(int argc, char *argv[]) {
 	const char *config_digest = cvirt_oci_r_manifest_get_config_digest(manifest);
 	int len = cvirt_oci_r_manifest_get_layers_length(manifest);
 
-	struct cvirt_io_entry *layer_trees[len];
+	struct cvirt_mtree_entry *layer_trees[len];
 
 	struct cvirt_oci_r_layer *layer = cvirt_oci_r_layer_from_archive_blob(
 		fd, cvirt_oci_r_manifest_get_layer_digest(manifest, 0),
 		cvirt_oci_r_manifest_get_layer_compression(manifest, 0));
-	layer_trees[0] = cvirt_io_tree_from_oci_layer(layer, 0);
+	layer_trees[0] = cvirt_mtree_tree_from_oci_layer(layer, 0);
 	size_t needed = estimate_disk_usage(layer_trees[0]);
 	cvirt_oci_r_layer_destroy(layer);
 	for (int i = 1; i < len; i++) {
@@ -612,7 +612,7 @@ int main(int argc, char *argv[]) {
 		struct cvirt_oci_r_layer *layer =
 			cvirt_oci_r_layer_from_archive_blob(fd, layer_digest,
 			cvirt_oci_r_manifest_get_layer_compression(manifest, i));
-		layer_trees[i] = cvirt_io_tree_from_oci_layer(layer, 0);
+		layer_trees[i] = cvirt_mtree_tree_from_oci_layer(layer, 0);
 		needed += estimate_disk_usage(layer_trees[i]);
 		cvirt_oci_r_layer_destroy(layer);
 	}
@@ -670,7 +670,7 @@ int main(int argc, char *argv[]) {
 
 		restore_mtime(&global_state, layer_trees[i], "/");
 
-		cvirt_io_tree_destroy(layer_trees[i]);
+		cvirt_mtree_tree_destroy(layer_trees[i]);
 
 		// snapshot after each layer
 		char *snapshot_dest = calloc(strlen(layer_digest) + 14, sizeof(char));

@@ -1,8 +1,8 @@
-#include <convirter/io/xattr.h>
+#include <convirter/mtree/xattr.h>
 
 #include <stdlib.h>
 
-void cvirt_io_xattr_destroy(struct cvirt_io_xattr *xattr) {
+void cvirt_mtree_xattr_destroy(struct cvirt_mtree_xattr *xattr) {
 	if (!xattr) {
 		return;
 	}

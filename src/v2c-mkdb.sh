@@ -17,18 +17,18 @@ handle_image () {
 }
 
 dockerhub () {
-	mkdir -p "docker.io/$1"
+	mkdir -p "docker.mtree/$1"
 	PAGE=1
 	DATA=$(curl "https://hub.docker.com/v2/repositories/$1/tags/?page_size=$DOCKERHUB_PAGESIZE&page=$PAGE")
 	while [ $(echo "$DATA" | jq '.results|length') -eq $DOCKERHUB_PAGESIZE ]; do
 		for i in $(echo "$DATA" | jq -r ".results[]|select(.tag_status == \"active\").images[]|select(.architecture == \"$ARCH\").digest"); do
-			handle_image "docker.io/$1" "$i"
+			handle_image "docker.mtree/$1" "$i"
 		done
 		PAGE=$((PAGE + 1))
 		DATA=$(curl "https://hub.docker.com/v2/repositories/$1/tags/?page_size=$DOCKERHUB_PAGESIZE&page=$PAGE")
 	done
 	for i in $(echo "$DATA" | jq -r ".results[]|select(.tag_status == \"active\").images[]|select(.architecture == \"$ARCH\").digest"); do
-		handle_image "docker.io/$1" "$i"
+		handle_image "docker.mtree/$1" "$i"
 	done
 }
 
