@@ -86,6 +86,9 @@ static uint32_t entry_hash(const char *path, struct cvirt_mtree_entry *entry,
 	gcry_md_write(gcry, &entry->inode->stat.st_mtim.tv_sec, sizeof(time_t));
 	gcry_md_write(gcry, entry->inode->sha256sum, 32);
 	for (int a = 0; a < entry->inode->xattrs_len; a++) {
+		if (!strcmp(entry->inode->xattrs[a].name, "security.selinux")) {
+			continue;
+		}
 		gcry_md_write(gcry, entry->inode->xattrs[a].name,
 			strlen(entry->inode->xattrs[a].name) + 1);
 		gcry_md_write(gcry, &entry->inode->xattrs[a].len, sizeof(size_t));

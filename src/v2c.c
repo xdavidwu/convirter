@@ -366,6 +366,9 @@ static bool compare_xattr(struct cvirt_mtree_inode *a, struct cvirt_mtree_inode 
 	bool b_compared[b->xattrs_len];
 	memset(b_compared, 0, sizeof(bool) * b->xattrs_len);
 	for (int i = 0; i < a->xattrs_len; i++) {
+		if (!strcmp(a->xattrs[i].name, "security.selinux")) {
+			continue;
+		}
 		bool found = false;
 		for (int j = 0; j < b->xattrs_len; j++) {
 			if (b_compared[j]) {
@@ -387,6 +390,9 @@ static bool compare_xattr(struct cvirt_mtree_inode *a, struct cvirt_mtree_inode 
 		}
 	}
 	for (int j = 0; j < b->xattrs_len; j++) {
+		if (!strcmp(b->xattrs[j].name, "security.selinux")) {
+			continue;
+		}
 		if (!b_compared[j]) {
 			return true;
 		}
