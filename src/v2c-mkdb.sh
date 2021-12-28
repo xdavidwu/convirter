@@ -47,3 +47,8 @@ oci_dist_with_docker_digest () {
 for i in alpine debian ubuntu centos fedora archlinux; do
 	dockerhub "library/$i"
 done
+
+# opensuse official images
+for i in leap tumbleweed; do
+	dockerhub "opensuse/$i"
+done
