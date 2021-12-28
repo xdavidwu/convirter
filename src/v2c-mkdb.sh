@@ -44,7 +44,7 @@ oci_dist_with_docker_digest () {
 #oci_dist_with_docker_digest quay.io prometheus/prometheus
 
 # dockerhub official images
-for i in alpine debian ubuntu centos fedora archlinux; do
+for i in alpine debian ubuntu centos fedora archlinux rockylinux almalinux clearlinux amazonlinux oraclelinux mageia; do
 	dockerhub "library/$i"
 done
 
