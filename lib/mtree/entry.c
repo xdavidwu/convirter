@@ -302,6 +302,8 @@ static char *normalize_tar_entry_name(const char *entry) {
 		res = strdup(&entry[1]);
 	} else if (entry[0] == '.' && entry[1] == '/') {
 		res = strdup(&entry[2]);
+	} else if (entry[0] == '.' && !entry[1]) {
+		res = strdup("/");
 	} else {
 		res = strdup(entry);
 	}
