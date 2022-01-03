@@ -288,7 +288,7 @@ static int dump_layer(struct c2v_state *state) {
 		if ((stat->st_mode & S_IFMT) != S_IFDIR) {
 			// overwrites
 			assert(guestfs_rm_rf(state->guestfs, abs_path) >= 0);
-		} else {
+		} else if (!guestfs_is_dir(state->guestfs, abs_path)){
 			// try to remove non-dir if exists
 			guestfs_rm_f(state->guestfs, abs_path);
 		}
