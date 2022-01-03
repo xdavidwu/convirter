@@ -264,6 +264,10 @@ static int dump_layer(struct c2v_state *state) {
 		abs_path[0] = '/';
 		strcpy(&abs_path[1], path);
 
+		if (strlen(abs_path) > 1 && !strcmp(&abs_path[strlen(abs_path) - 1], "/.")) {
+			abs_path[strlen(abs_path) - 1] = '\0';
+		}
+
 		const char *hardlink = archive_entry_hardlink(state->archive_entry);
 		if (hardlink) {
 			char *abs_target = calloc(2 + strlen(hardlink),
