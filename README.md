@@ -64,6 +64,8 @@ Find out best base container image for a VM by:
 v2c-findcontainer -d <data path> <VM image>
 ```
 
+You can download required data at https://github.com/xdavidwu/convirter-data
+
 Known containers and their estimated reused bytes are printed.
 
 And then download the container image using skopeo:
@@ -77,3 +79,12 @@ Pass to v2c to make it reuse layers from it:
 ```
 v2c --layer-reuse=<archive from above> <VM image> <oci archive>
 ```
+
+## License
+
+MIT.
+
+Bundled binaries in 'initramfs/' are under their original licenses:
+
+* busybox: GPLv2, source code available at https://busybox.net/downloads/busybox-1.34.0.tar.bz2
+* kmod: GPLv2, source code available at https://kernel.org/pub/linux/utils/kernel/kmod/kmod-29.tar.xz
